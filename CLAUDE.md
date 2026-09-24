@@ -130,16 +130,28 @@ coldguard/
 │   └── build_data.py             # ALREADY BUILT: fetches real open data
 ├── simulator/sim.py              # ALREADY BUILT: 11 virtual trucks + faults
 ├── backend/
-│   ├── main.py        # FastAPI app, REST + WebSocket
+│   ├── config.py      # every threshold, cost and clock, one place
+│   ├── main.py        # FastAPI app, REST + WebSocket + /track
 │   ├── ingest.py      # MQTT subscriber → validate → DB + in-memory state
+│   ├── state.py       # in-memory fleet, product-temperature lag, risk
+│   ├── geo.py         # places, routes, distances along the polyline
 │   ├── detector.py    # door / defrost / sensor fault / cooling failure
 │   ├── freshness.py   # Q10 model, freshness on arrival, risk
-│   ├── planner.py     # options A–D, scoring
-│   ├── agent.py       # Qwen2.5 explanation + template fallback
+│   ├── planner.py     # options A–F, scoring, escalation to a human
+│   ├── agent.py       # Qwen2.5 explanation + numeric guard + template fallback
 │   ├── audit.py       # hash-chained decision log
-│   └── seed.sql
-└── web/src/  Map.tsx · FleetList.tsx · TruckPanel.tsx · AlertCard.tsx · OptionsTable.tsx · EventLog.tsx · DemoPanel.tsx · TrackPage.tsx
+│   ├── db.py          # PostgreSQL, degrades to memory only
+│   ├── templates/track.html
+│   ├── schema.sql · seed.sql · Dockerfile
+├── tests/             # 72 tests + recorded simulator traces
+├── docs/              # decision-policy.md · data-pack.md
+├── pitch/             # DEMO_SCRIPT.md · DECK.md
+└── web/src/  Map.tsx · FleetList.tsx · TruckPanel.tsx · AlertCard.tsx · OptionsTable.tsx ·
+           EventLog.tsx · DemoPanel.tsx · ComparisonScreen.tsx · DispatchCard.tsx · Sparkline.tsx
 ```
+
+The QR page is server-rendered by the backend (`backend/templates/track.html`)
+rather than a React route, so a phone can open it without loading the dashboard.
 
 ## 6. Data contracts (do not change without updating all sides)
 
@@ -164,15 +176,24 @@ coldguard/
 | shipments | truck_id, product, qty_kg, route_id, destination_place_id, eta, life_left_h, status |
 | readings | ts, truck_id, air_c, hum_pct, door_open, lat, lon, src |
 | events | truck_id, type (door, defrost, sensor_fault, failure), started_at, ended_at, peak_c |
-| decisions | shipment/truck, options (json), chosen, text_ar, text_en, approved_by, approved_at, prev_hash, hash |
+| decisions | shipment/truck, options (json), facts (json), chosen, text_ar, text_en, text_source, approved_by, approved_at, prev_hash, hash |
+
+The `readings` table stores the air reading as sent. The cargo temperature is
+derived in `state.py` and is not a separate column.
 
 **Backend API**
 
 | Endpoint | Purpose |
 | --- | --- |
-| `GET /api/fleet` | All trucks: temperature, humidity, freshness, risk, position |
-| `GET /api/trucks/{id}/history` | Temperature and freshness timeline |
+| `GET /api/fleet` | All trucks: temperature, humidity, freshness, risk, position, totals |
+| `GET /api/trucks/{id}` | One truck |
+| `GET /api/trucks/{id}/history` | Temperature (air and cargo) and freshness timeline |
+| `GET /api/places` · `GET /api/routes` | Reference geometry for the map |
+| `GET /api/heat` | Heat-risk layer from `heat_by_hour.csv` |
 | `GET /api/dispatch` | Best departure times per route (from `dispatch_suggestions.csv`) |
+| `GET /api/events` · `GET /api/decisions` · `GET /api/decisions/{id}` | Log and decisions |
+| `GET /api/audit` | Hash chain plus `chain_ok` |
+| `GET /api/impact` | Comparison screen: with and without ColdGuard |
 | `POST /api/decisions/{id}/approve` | Approve → execute (update route/destination) → audit log |
 | `POST /api/demo/fault` | `{truck_id, fault, on}` → publishes to the control topic |
 | `POST /api/demo/backup` | Toggle TRK-07 backup mode |
@@ -202,26 +223,73 @@ coldguard/
 ### 7.3 Freshness model
 
 ```
-speed          = Q10 ** ((T - ideal_temp_c) / 10)      # warmer = ages faster (T = air_c)
+speed          = Q10 ** ((T - ideal_temp_c) / 10)      # warmer = ages faster
 life_left_h   -= dt_hours * DEMO_SPEED * speed         # DEMO_SPEED = 120 (1 s on stage = 2 min)
 hours_to_spoil = life_left_h / speed                   # at the current temperature
-life_on_arrival_h = life_left_h - remaining_trip_h
+life_on_arrival_h = life_left_h - remaining_trip_h * speed_on_the_way
 at_risk = life_on_arrival_h < min_life_on_arrival_days * 24
 ```
 
-Show "Demo clock ×120" on the dashboard whenever accelerated time is used.
+Two refinements were needed once this met the real sensor. Both are in
+`config.py` and both are visible on the dashboard.
+
+**T is the cargo temperature, not the air reading.** A DHT11 spikes in seconds;
+two tonnes of lettuce follow with a lag. The product temperature is a
+first-order lag on the air reading with a time constant of `PRODUCT_LAG_H`
+(2 simulated hours). The detector still watches the air, because that is what
+catches a failure early. Without this, one second of a warm hand burned half a
+day of shelf life and the demo's own numbers stopped adding up.
+
+**`speed_on_the_way` defaults to 1.0**, which reproduces the plain subtraction
+above for a load that is cooling normally. The dashboard assumes a warm spell is
+fixed within `WARM_PROJECTION_H` (1 h) — unless the detector has an open cooling
+failure, in which case it uses the honest worst case, warm for the whole
+remaining trip. A lifted lid therefore never turns the fleet amber, and a
+confirmed failure turns it amber at once. The planner always uses the worst case
+for option A (section 7.4).
+
+Two clocks, both labelled on screen:
+
+| Clock | Constant | Rate | Drives |
+| --- | --- | --- | --- |
+| Shelf life | `DEMO_SPEED` | ×120 | Spoilage: 1 s on stage = 2 min |
+| Map | `MAP_SPEED` | ×10 | Movement, so a truck crosses its route over the four-minute demo |
+
+Pass the same `--demo-speed 10` to `simulator/sim.py` so all twelve trucks move
+at one rate.
 
 ### 7.4 Planner (options for an at-risk shipment)
 
-| Option | Meaning |
-| --- | --- |
-| A. Continue as planned | Baseline; usually fails the store minimum |
-| B. Divert to nearest cold store | Cooling restored after the drive there; then continue |
-| C. Deliver direct to nearest store | Skip the warehouse; shorter remaining trip |
-| D. Sell now with markdown / donate to food bank | Always possible; recovers part of the value |
+| Option | Verb | Meaning |
+| --- | --- | --- |
+| A. Continue as planned | continue | Baseline; usually fails the store minimum |
+| B. Divert to nearest cold store | reroute | Cooling restored after the drive there; then continue |
+| C. Deliver direct to nearest store | reroute | Skip the warehouse; shorter remaining trip |
+| D. Sell now with a markdown | sell | Always possible; recovers part of the value |
+| E. Donate to the food bank | donate | While it is still safe to eat |
+| F. Hold in the nearest cold room | hold | Stops the clock; costs today's delivery slot |
+
+A–D are the options in the original brief. E and F split donating and holding
+out of D, so that the four verbs a dispatcher actually presses — **sell, donate,
+hold, reroute** — are each one button.
 
 Assume the cargo stays at its current temperature until it reaches cooling. An option is feasible if freshness on arrival ≥ the store minimum.
 `score = kg_saved × value_per_kg − extra_km × cost_per_km − markdown_loss` (constants in config). Pick the highest score and keep all options for display.
+
+Two guards on the arithmetic:
+
+- A shipment that will be accepted anyway is never moved: another option must
+  beat A by `REROUTE_MIN_GAIN_QAR`.
+- Selling and donating rescue food that is below the store's bar, because those
+  channels have no bar. **Holding does not** — it only delays the loss — so once
+  a load is out of specification, hold is credited with no kilos.
+
+**The planner escalates instead of recommending** when the sensor cannot be
+trusted, when no option meets the store minimum, when two genuinely different
+verbs are within `REVIEW_MARGIN_QAR`, or when the best action is irreversible
+and worth more than `REVIEW_VALUE_QAR`. It then sets `needs_human_review` with
+written reasons, the agent says so instead of recommending, and the dashboard
+shows the four verbs and waits. See `docs/decision-policy.md`.
 
 ### 7.5 Agent (LLM explanation only)
 
@@ -229,6 +297,11 @@ Assume the cargo stays at its current temperature until it reaches cooling. An o
 - Model: `qwen2.5:7b` via Ollama HTTP API at `localhost:11434`.
 - Output: two sentences in Arabic and two in English, using only numbers from the JSON.
 - Timeout 5 s → fall back to a fixed template with the same numbers.
+- **Numeric guard:** the generated text is re-read and every standalone number in
+  it (Arabic-Indic digits included) must appear in the facts, or the answer is
+  thrown away and the template is used. Numbers inside names — `CO2e`, `qwen2.5`,
+  `R1` — are not treated as figures.
+- When `needs_human_review` is set, the model is told not to recommend anything.
 
 ### 7.6 Audit log
 
@@ -269,34 +342,43 @@ Roadmap only (mock screens): phone-camera quality check at arrival, predictive m
 
 ## 11. Work breakdown
 
-**Hardware / Arduino**
+**Hardware / Arduino** — *needs the physical board; the sketch is written*
 - [ ] Install IDE, board package and libraries; wire the DHT11; see readings in the Serial Monitor
-- [ ] Connect to the hotspot and publish to MQTT; add reconnect logic
+- [x] Firmware publishes to MQTT with Wi-Fi and MQTT reconnect, an LED that is on
+      while disconnected, `-127` on a failed read, optional lid switch — `firmware/node/node.ino`
 - [ ] Build the cooler box; record resting temperature; record test traces (lid, hand, unplugged)
-- [ ] Print the QR code for the box
+- [ ] Print the QR code for the box — `make qr`
 
 **Backend**
-- [ ] docker-compose, schema, seed from `data/`
-- [ ] Ingest (subscribe `coldguard/+/telemetry`; enrich TRK-07 with route position)
-- [ ] In-memory fleet state, REST endpoints, WebSocket
-- [ ] Approve → execute → audit; demo endpoints (fault, backup, reset); `/track/TRK-07`
+- [x] docker-compose, schema, seed from `data/` (degrades to memory if Postgres is down)
+- [x] Ingest (subscribe `coldguard/+/telemetry`; enrich TRK-07 with route position)
+- [x] In-memory fleet state, REST endpoints, WebSocket
+- [x] Approve → execute → audit; demo endpoints (fault, backup, reset); `/track/TRK-07`
 
 **AI / logic**
-- [ ] `freshness.py`, `detector.py`, `planner.py`, `agent.py` per section 7
-- [ ] Unit tests on recorded traces and simulator faults
+- [x] `freshness.py`, `detector.py`, `planner.py`, `agent.py` per section 7
+- [x] Unit tests on recorded traces and simulator faults — 72 tests, `make test`
+- [x] Escalation to a human when the system should not decide (`docs/decision-policy.md`)
 
 **Data / GIS**
 - [ ] Run `build_data.py` with internet the day before; check routes and stores
-- [ ] Heat-risk map layer from `heat_by_hour.csv`; dispatch suggestion card
+- [x] Heat-risk map layer from `heat_by_hour.csv`; dispatch suggestion card
 
 **Frontend**
-- [ ] Map with 12 trucks coloured by risk; TRK-07 "LIVE sensor"
-- [ ] Fleet list; TRK-07 panel with live chart and freshness countdown; "Demo clock ×120"
-- [ ] Event log; alert card with options A–D, AR/EN text, Approve/Change; route redraw
-- [ ] Comparison screen; QR track page; hidden demo panel; Arabic RTL toggle
+- [x] Map with 12 trucks coloured by risk; TRK-07 "LIVE sensor"
+- [x] Fleet list; TRK-07 panel with live chart (air and cargo) and freshness countdown; both clocks shown
+- [x] Event log; alert card with options A–F, AR/EN text, Approve/Change; route redraw
+- [x] Comparison screen; QR track page; hidden demo panel (press D); Arabic RTL toggle
 
 **Pitch**
-- [ ] 12-slide deck (non-technical; 2 slides on the hardware demo); demo script; 3 rehearsals; backup video
+- [x] Deck outline and demo script — `pitch/DECK.md`, `pitch/DEMO_SCRIPT.md`
+- [ ] Build the actual slides; 3 rehearsals; backup video
+
+**Still open before the event**
+- [ ] Flash the board and record the real resting temperature of the box
+- [ ] `make model` on the demo laptop (qwen2.5:7b is about 5 GB)
+- [ ] `make data` with internet, the day before
+- [ ] Calibrate the product table against something better than assumptions
 
 ## 12. Build checkpoints
 
@@ -314,7 +396,15 @@ Roadmap only (mock screens): phone-camera quality check at arrival, predictive m
 ## 13. Real vs simulated (say this in the pitch)
 
 Real: TRK-07 temperature and humidity (NodeMCU + DHT11), the physical door-opening and warming events, the detector/freshness/planner code, the local AI explanation, the open heat and road data (after the fetch).
-Simulated: the other 11 trucks, truck movement (on real roads), store stock, and executing actions (no real truck moves). Time is accelerated ×120 and shown on screen. Product parameters are literature-based assumptions.
+Simulated: the other 11 trucks, truck movement (on real roads), store stock, and executing actions (no real truck moves). Product parameters are literature-based assumptions.
+
+Time is accelerated at two rates, both shown on screen: shelf life at ×120 and
+map movement at ×10 (section 7.3). Say this plainly — a judge who spots it
+before you do will assume the rest is also unsaid.
+
+The cargo temperature is modelled, not measured: it is a lag on the air reading,
+not a second sensor. A pulp probe would measure it directly, and that is the
+first thing to add in a pilot.
 
 ## 14. Notes for Claude Code
 
