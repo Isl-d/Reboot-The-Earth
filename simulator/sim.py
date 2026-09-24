@@ -134,7 +134,10 @@ def main():
     ap.add_argument("--broker", default="localhost")
     ap.add_argument("--port", type=int, default=1883)
     ap.add_argument("--interval", type=float, default=2.0, help="seconds between readings")
-    ap.add_argument("--demo-speed", type=float, default=120, help="truck movement speed-up")
+    ap.add_argument("--demo-speed", type=float, default=10,
+                    help="how fast trucks move along their routes; match the backend's "
+                         "MAP_SPEED so all twelve move at one rate. The backend's "
+                         "shelf-life clock is separate and runs at x120.")
     ap.add_argument("--dry-run", action="store_true", help="print messages instead of publishing")
     ap.add_argument("--ticks", type=int, default=0, help="stop after N ticks (0 = run forever)")
     ap.add_argument("--seed", type=int, default=7, help="fixed seed so every demo run is identical")
