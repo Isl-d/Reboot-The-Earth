@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .. import cache, config, fleet
 from ..util import camelize
-from ..db import seed as seeder, session as db
+from ..db import queries, seed as seeder, session as db
 from ..ingestion.consumer import MqttConsumer
 from ..ingestion.pipeline import Pipeline
 from ..schemas import (PredictionIn, RecommendationIn, ScenarioRequest,
@@ -51,6 +51,9 @@ async def lifespan(app: FastAPI):
     db.init()
     seeder.seed()
     cache.init()
+
+    queries.close_stale_runs()
+    pipeline.load_open_incidents(queries.open_incidents())
 
     if consumer.start():
         try:
@@ -126,12 +129,29 @@ def get_truck(truck_id: str) -> dict:
 
 
 @app.get("/api/trucks/{truck_id}/telemetry")
-def get_telemetry(truck_id: str, limit: int = 200) -> dict:
+def get_telemetry(truck_id: str, limit: int = 200,
+                  source: str = "auto") -> dict:
+    """Readings for the charts, oldest first.
+
+    History comes from `sensor_readings`, which survives a restart and is not
+    capped by the live window. `source=memory` forces the in-process buffer
+    (useful when the database is down), `source=db` forces the store.
+    """
     if not any(s.truck_id == truck_id for s in pipeline.fleet_states()):
         raise HTTPException(404, f"no truck {truck_id}")
-    points = pipeline.telemetry(truck_id, limit)
-    return {"truckId": truck_id, "count": len(points),
-            "points": [p.model_dump(by_alias=True, mode="json") for p in points]}
+
+    points: list[dict] = []
+    used = "memory"
+    if source in ("auto", "db"):
+        points = queries.readings(truck_id, limit=limit)
+        used = "database"
+    if not points and source != "db":
+        points = [p.model_dump(by_alias=True, mode="json")
+                  for p in pipeline.telemetry(truck_id, limit)]
+        used = "memory"
+
+    return {"truckId": truck_id, "count": len(points), "source": used,
+            "points": points}
 
 
 # --------------------------------------------------- reference geography
@@ -215,24 +235,47 @@ def list_rejected() -> dict:
 
 
 # ----------------------------------------------------------- simulation
+_run_id: int | None = None
+
+
 @app.post("/api/simulation/start")
 def simulation_start(req: SimulationRequest) -> dict:
+    global _run_id
+
     started = runner.start(req.speed_multiplier or 1.0)
     if req.scenario:
         for tid in runner.trucks:
             runner.set_scenario(tid, req.scenario)
-    return {"running": runner.running, "started": started,
+    if started:
+        _run_id = queries.start_run(req.scenario or "NORMAL",
+                                    runner.speed_multiplier, runner.seed)
+    return {"running": runner.running, "started": started, "runId": _run_id,
             "speedMultiplier": runner.speed_multiplier, "sink": _sink_mode}
 
 
 @app.post("/api/simulation/stop")
 def simulation_stop() -> dict:
+    global _run_id
+
     stopped = runner.stop()
+    if stopped:
+        queries.stop_run(_run_id, datetime.now(timezone.utc))
+        _run_id = None
     return {"running": runner.running, "stopped": stopped, "ticks": runner.ticks}
+
+
+@app.get("/api/simulation/runs")
+def simulation_runs(limit: int = 20) -> dict:
+    """Every recorded run, newest first."""
+    return {"runs": queries.runs(limit)}
 
 
 @app.post("/api/simulation/reset")
 def simulation_reset() -> dict:
+    global _run_id
+
+    queries.stop_run(_run_id, datetime.now(timezone.utc))
+    _run_id = None
     runner.reset()
     pipeline.reset()
     return {"running": runner.running, "ticks": runner.ticks, "reset": True}

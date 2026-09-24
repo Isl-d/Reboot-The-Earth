@@ -75,6 +75,33 @@ class Pipeline:
                 )
                 self.accumulators[t["id"]] = TruckAccumulator(t["id"])
 
+    def load_open_incidents(self, rows: list) -> int:
+        """Rehydrate incidents left open by a previous process.
+
+        Without this, a restart mid-demo empties the incident panel while the
+        truck is still in trouble, and the next reading opens a duplicate.
+        """
+        loaded = 0
+        with self.lock:
+            for r in rows:
+                if r.id in self.incidents:
+                    continue
+                self.incidents[r.id] = Incident(
+                    id=r.id, truck_id=r.truck_id, type=r.type,
+                    severity=r.severity, status=r.status,
+                    opened_at=r.opened_at, closed_at=r.closed_at,
+                    detail=r.detail, peak_temperature_c=r.peak_temperature_c)
+                loaded += 1
+                # Keep the id counter ahead of what is already stored.
+                if r.id.startswith("INC-"):
+                    try:
+                        self._seq = max(self._seq, int(r.id.split("-")[1]))
+                    except (IndexError, ValueError):
+                        pass
+        if loaded:
+            log.info("recovered %d open incident(s) from the store", loaded)
+        return loaded
+
     def _destination_latlon(self, truck: TruckState) -> tuple[float, float] | None:
         if not truck.destination_id:
             return None

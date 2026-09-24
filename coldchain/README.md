@@ -94,12 +94,13 @@ curl -X POST localhost:8100/api/simulation/scenario \
 | --- | --- |
 | `GET /api/health` | Which backends are live, message counts, simulation state |
 | `GET /api/trucks` · `GET /api/trucks/{id}` | Fleet and one truck, with derived values |
-| `GET /api/trucks/{id}/telemetry` | Recent readings for the charts |
+| `GET /api/trucks/{id}/telemetry` | Readings for the charts, oldest first, from the store |
 | `GET /api/warehouses` · `/{id}` · `GET /api/stores` · `GET /api/routes` | Map geometry |
 | `GET /api/inventory` · `/{batchId}` | Batches, quantities and expiry |
 | `GET /api/incidents` · `/{id}` | Threshold incidents, filterable by status |
 | `GET /api/rejected` | Validation failures — bad data is visible, not dropped |
 | `POST /api/simulation/start · stop · reset · scenario · tick` | Demo control |
+| `GET /api/simulation/runs` | Recorded runs, newest first |
 | `GET /api/internal/context/{truckId}` | The bundle Person 4's model consumes |
 | `POST /api/internal/predictions · recommendations` | Person 4's output, stored and forwarded |
 
@@ -119,6 +120,35 @@ Events: `HELLO`, `TRUCK_STATE_UPDATED`, `INCIDENT_CREATED`,
 Ingest runs on the MQTT thread and sends happen on the asyncio loop, so the
 hub hands messages across with `call_soon_threadsafe` and drops a frame rather
 than stalling ingest behind a slow client.
+
+## History, and what survives a restart
+
+The pipeline keeps a live window of the last `WINDOW_SIZE` readings per truck.
+That buffer is for derived values and the Person 4 bundle; it is capped, and
+it dies with the process. Anything a chart plots comes from `sensor_readings`
+instead, which is the authoritative record:
+
+* `GET /api/trucks/{id}/telemetry` reads the store and says
+  `"source": "database"`. It falls back to the live window (and says
+  `"memory"`) when the store is unreachable, and `?source=memory` forces that.
+* Open incidents are reloaded at startup, so killing the service mid-excursion
+  does not empty the incident panel or let the next reading open a duplicate.
+* A run left open by a process that died is closed at the newest reading in
+  the store, not at `now`, so its duration is not inflated by the downtime.
+
+## Migrations
+
+`create_all` is how the demo comes up from nothing. Once teammates have data
+they care about, change the schema with Alembic instead:
+
+```bash
+python -m alembic -c coldchain/alembic.ini revision --autogenerate -m "what changed"
+python -m alembic -c coldchain/alembic.ini upgrade head
+```
+
+The URL comes from `COLDCHAIN_DATABASE_URL`, not from `alembic.ini`. A test
+builds a database from the migration alone and fails if it has drifted from
+the models.
 
 ## Derived values
 

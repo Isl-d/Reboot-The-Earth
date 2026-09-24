@@ -206,3 +206,38 @@ def test_the_websocket_opens_with_the_fleet_then_streams_updates(client):
         for key in ("truckId", "temperatureC", "latitude", "longitude",
                     "riskScore", "riskLevel"):
             assert key in message
+
+
+def test_telemetry_says_where_it_came_from(client):
+    for _ in range(4):
+        client.post("/api/simulation/tick")
+    assert wait_for(
+        lambda: client.get("/api/trucks/T102/telemetry").json()["count"] >= 4)
+
+    body = client.get("/api/trucks/T102/telemetry").json()
+    assert body["source"] in ("database", "memory")
+    # Oldest first: that is the order a chart plots.
+    stamps = [p["timestamp"] for p in body["points"]]
+    assert stamps == sorted(stamps)
+
+
+def test_memory_is_available_as_an_explicit_fallback(client):
+    for _ in range(3):
+        client.post("/api/simulation/tick")
+    assert wait_for(lambda: client.get(
+        "/api/trucks/T102/telemetry?source=memory").json()["count"] >= 3)
+    body = client.get("/api/trucks/T102/telemetry?source=memory").json()
+    assert body["source"] == "memory"
+
+
+def test_simulation_runs_are_recorded(client):
+    started = client.post("/api/simulation/start",
+                          json={"speedMultiplier": 4.0}).json()
+    client.post("/api/simulation/stop")
+
+    runs = client.get("/api/simulation/runs").json()["runs"]
+    assert runs, "a started simulation should be recorded"
+    if started.get("runId") is not None:
+        current = next(r for r in runs if r["id"] == started["runId"])
+        assert current["speedMultiplier"] == 4.0
+        assert current["stoppedAt"] is not None       # stop closed it

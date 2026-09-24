@@ -169,6 +169,16 @@ class Incident(Wire):
     detail: str = ""
     peak_temperature_c: Optional[float] = None
 
+    @field_validator("opened_at", "closed_at")
+    @classmethod
+    def _utc(cls, v: Optional[datetime]) -> Optional[datetime]:
+        # SQLite hands back naive datetimes. Incidents are sorted by time, and
+        # mixing naive with aware raises — which would take out the incident
+        # panel after a restart. Normalize on the way in.
+        if v is None:
+            return None
+        return v.astimezone(timezone.utc) if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
 
 # ------------------------------------------------------------------ control
 Scenario = Literal["NORMAL", "TEMPERATURE_EXCURSION", "DOOR_LEFT_OPEN",
