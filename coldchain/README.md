@@ -1,0 +1,174 @@
+# ColdChain Data Platform — Person 3
+
+Sensors in, operational data out. This service owns the whole path from a
+device reading to the JSON the dashboard renders:
+
+```
+sensor simulator ─→ MQTT ─→ consumer ─→ validate ─→ normalize ─→ derive
+                                                                   │
+                                          PostgreSQL / TimescaleDB ┤
+                                          Redis (latest state)     ┤
+                                                                   ▼
+                                                   REST  ·  WebSocket /ws/live
+```
+
+## What this service does not do
+
+It never predicts. No spoilage probability, no remaining shelf life, no risk
+score and no choice of destination is computed here — those belong to
+Person 4's model. `riskLevel` reads `UNKNOWN` and `riskScore` is `null` until
+a prediction is posted to `/api/internal/predictions`, at which point this
+service stores it, caches it and forwards it unchanged.
+
+The line is deliberate and it is worth stating on stage: everything this
+service reports is either measured or arithmetic over measurements.
+
+## Run it
+
+**With Docker** — Mosquitto, TimescaleDB, Redis and the API:
+
+```bash
+cd coldchain
+docker compose up -d
+curl -X POST localhost:8100/api/simulation/start -H 'content-type: application/json' -d '{"speedMultiplier": 1}'
+curl localhost:8100/api/trucks | head
+```
+
+**On a bare laptop** — no broker, no database, no Docker. The simulator feeds
+the pipeline directly, Postgres falls back to SQLite and Redis falls back to
+process memory:
+
+```bash
+pip install -r coldchain/requirements.txt
+python -m coldchain.api.main          # http://localhost:8100
+```
+
+`GET /api/health` always says which of those paths is live:
+
+```json
+{"status":"ok","database":"postgresql","timescale":true,"cache":"redis",
+ "mqtt":{"connected":true,"messages":1420},
+ "simulation":{"running":true,"ticks":710,"sink":"mqtt"}}
+```
+
+## Telemetry
+
+Published every 2 s (configurable) to `coldchain/trucks/{truckId}/telemetry`:
+
+```json
+{
+  "deviceId": "TRUCK-T102", "truckId": "T102",
+  "timestamp": "2026-09-24T18:25:00Z",
+  "temperatureC": 7.2, "humidityPct": 74,
+  "latitude": 25.2854, "longitude": 51.5310,
+  "speedKmh": 42, "gForce": 0.2,
+  "doorOpen": false, "refrigerationOn": true
+}
+```
+
+Ingest also accepts the shorter spelling from the brief's MQTT example
+(`temperature`, `humidity`, `lat`, `lon`) and recovers a missing `truckId`
+from the `deviceId` or the topic. A topic that contradicts the payload is a
+conflict, not something to guess at.
+
+## Scenarios
+
+| Scenario | What it does |
+| --- | --- |
+| `NORMAL` | Oscillates inside the product's safe band |
+| `TEMPERATURE_EXCURSION` | Creeps past the safe maximum and stays there |
+| `DOOR_LEFT_OPEN` | Door reported open, humidity climbs, temperature drifts up |
+| `REFRIGERATION_FAILURE` | Cooling off, temperature rises towards 41 °C |
+| `TRAFFIC_DELAY` | Speed collapses, ETA grows, cooling still works |
+| `COMBINED_FAILURE` | Stopped in traffic with the cooling dead |
+
+```bash
+curl -X POST localhost:8100/api/simulation/scenario \
+  -H 'content-type: application/json' \
+  -d '{"truckId":"T102","scenario":"REFRIGERATION_FAILURE","speedMultiplier":10}'
+```
+
+## REST
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /api/health` | Which backends are live, message counts, simulation state |
+| `GET /api/trucks` · `GET /api/trucks/{id}` | Fleet and one truck, with derived values |
+| `GET /api/trucks/{id}/telemetry` | Recent readings for the charts |
+| `GET /api/warehouses` · `/{id}` · `GET /api/stores` · `GET /api/routes` | Map geometry |
+| `GET /api/inventory` · `/{batchId}` | Batches, quantities and expiry |
+| `GET /api/incidents` · `/{id}` | Threshold incidents, filterable by status |
+| `GET /api/rejected` | Validation failures — bad data is visible, not dropped |
+| `POST /api/simulation/start · stop · reset · scenario · tick` | Demo control |
+| `GET /api/internal/context/{truckId}` | The bundle Person 4's model consumes |
+| `POST /api/internal/predictions · recommendations` | Person 4's output, stored and forwarded |
+
+## WebSocket
+
+`/ws/live` opens with a `HELLO` carrying the whole fleet, then streams:
+
+```json
+{"event":"TRUCK_STATE_UPDATED","truckId":"T102","temperatureC":7.5,
+ "latitude":25.2858,"longitude":51.5315,"riskScore":78,"riskLevel":"HIGH"}
+```
+
+Events: `HELLO`, `TRUCK_STATE_UPDATED`, `INCIDENT_CREATED`,
+`INCIDENT_UPDATED`, `PREDICTION_UPDATED`, `RECOMMENDATION_UPDATED`,
+`SIMULATION_RESET`.
+
+Ingest runs on the MQTT thread and sends happen on the asyncio loop, so the
+hub hands messages across with `call_soon_threadsafe` and drops a frame rather
+than stalling ingest behind a slow client.
+
+## Derived values
+
+Computed per truck on every accepted reading: step and trip distance
+(haversine), temperature deviation, time above the batch's safe maximum,
+thermal exposure `E_T = Σ max(0, Tᵢ − T_safe)·Δt` in °C·min, door-open
+duration, refrigeration-off duration, distance to destination and ETA. A
+stationary truck still gets an ETA — it falls back to a cruising speed rather
+than reporting infinity.
+
+## Incidents
+
+Threshold facts, not predictions. `TEMPERATURE_EXCURSION` after 60 s above the
+batch's safe maximum, `DOOR_LEFT_OPEN` after 120 s, `REFRIGERATION_FAILURE`
+after 60 s with the unit reported off, `SHOCK` above 2 g. One incident stays
+open per kind per truck and closes when the condition clears. Every threshold
+is in `config.py`.
+
+## One clock
+
+When the simulation runs accelerated, timestamps, accumulated durations and
+the `now` that validation compares against all come from one simulated clock
+(`clock.py`). Without that, a demo at ×10 would emit ten minutes of readings
+carrying the same wall-clock second and no duration-based incident would ever
+open. At ×1 the clock tracks real time, so a separate ingest process sees no
+skew.
+
+## Data quality
+
+Rejected with a reason and logged to `rejected_readings`, never silently
+dropped: a temperature outside −40…80 °C (which catches the classic `-127`
+from a dead sensor), humidity outside 0–100, latitude or longitude off the
+globe, negative speed or g-force, a timestamp from the future or more than a
+day old, and a payload with no recoverable truck id.
+
+## Tests
+
+```bash
+pytest coldchain/tests -q                        # SQLite + in-memory cache
+COLDCHAIN_TEST_DATABASE_URL=postgresql+psycopg://coldchain:coldchain@localhost:5432/coldchain \
+  pytest coldchain/tests -q                      # the same suite on Postgres
+mosquitto -c coldchain/mosquitto/mosquitto.conf  # then the MQTT tests run too
+```
+
+The MQTT integration tests skip themselves when no broker is listening, so the
+suite still passes on a laptop with nothing installed.
+
+## Relationship to the rest of the repository
+
+This is a self-contained service under `coldchain/`. It does not import from
+or modify the existing ColdGuard backend in `backend/`, which has its own
+contracts and its own demo; the two can run side by side on different ports
+(8000 and 8100).

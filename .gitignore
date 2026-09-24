@@ -12,3 +12,7 @@ web/dist/
 data/*.bak
 qr/
 *.tsbuildinfo
+
+# coldchain local artifacts
+coldchain.db
+coldchain/**/__pycache__/
