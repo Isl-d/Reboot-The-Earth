@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from . import config, geo
 from .db import db
+from .freshness import get_product
 from .ingest import Ingest
 from .state import state
 
@@ -162,14 +163,19 @@ def impact() -> dict:
     """The comparison screen: what happens with and without ColdGuard."""
     with state.lock:
         approved = [d for d in state.decisions.values() if d.get("approved_at")]
-    without_kg = sum(d["facts"]["qty_kg"] for d in approved
-                     if d["facts"]["if_nothing_done_days"] < d["facts"]["store_minimum_days"])
+    # "Without ColdGuard" is the same load, refused at the gate: the kilos and
+    # the money come from the product table, not from a round number.
+    rejected = [d for d in approved
+                if d["facts"]["if_nothing_done_days"] < d["facts"]["store_minimum_days"]]
+    without_kg = sum(d["facts"]["qty_kg"] for d in rejected)
+    without_value = sum(d["facts"]["qty_kg"] * get_product(d["product"]).value_qar_per_kg
+                        for d in rejected)
     with_kg = sum(d["chosen_option"]["kg_saved"] for d in approved)
     value = sum(d["chosen_option"]["score"] for d in approved)
     return {
         "totals": state.totals(),
         "without_coldguard": {"kg_rejected": round(without_kg),
-                              "value_lost_qar": round(without_kg * 10),
+                              "value_lost_qar": round(without_value),
                               "outcome": "rejected at the gate, sent to landfill"},
         "with_coldguard": {"kg_accepted": round(with_kg),
                            "value_kept_qar": round(value),

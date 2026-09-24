@@ -1,0 +1,80 @@
+# ColdGuard - everything except the NodeMCU starts here.
+#
+#   docker compose up -d          the whole demo
+#   docker compose up -d backend  just the API (mosquitto and db come with it)
+#
+# The laptop needs about 16 GB of RAM for the local model. Pull it once, before
+# the event:  docker compose exec ollama ollama pull qwen2.5:7b
+name: coldguard
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["1883:1883"]
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: coldguard
+      POSTGRES_PASSWORD: coldguard
+      POSTGRES_DB: coldguard
+    ports: ["5432:5432"]
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coldguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports: ["8000:8000"]
+    environment:
+      COLDGUARD_MQTT_HOST: mosquitto
+      COLDGUARD_DB_URL: postgresql://coldguard:coldguard@db:5432/coldguard
+      COLDGUARD_OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ./data:/app/data:ro          # rebuild the data pack without rebuilding the image
+    depends_on:
+      mosquitto: {condition: service_started}
+      db: {condition: service_healthy}
+
+  simulator:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Movement is animated at x10 so a truck crosses its route over the four
+    # minutes of the demo; the shelf-life clock inside the backend runs at x120.
+    command: python simulator/sim.py --broker mosquitto --demo-speed 10 --seed 7
+    depends_on:
+      mosquitto: {condition: service_started}
+
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes:
+      - ollama_models:/root/.ollama
+    # Optional: the backend falls back to a fixed template if this is not up.
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports: ["5173:5173"]
+    environment:
+      VITE_API_BASE: http://localhost:8000
+    depends_on: [backend]
+
+volumes:
+  db_data:
+  ollama_models:
