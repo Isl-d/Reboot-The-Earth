@@ -16,3 +16,5 @@ qr/
 # coldchain local artifacts
 coldchain.db
 coldchain/**/__pycache__/
+# Redis writes its snapshot into the working directory when run locally.
+dump.rdb
