@@ -2,6 +2,7 @@
 
 Everything the data lane owns. Every file carries a `source` column or property,
 so you always know whether a number is real open data or an approximation.
+For the rest of the repository, see [file-map.md](file-map.md).
 See the [README](../README.md) for the project as a whole.
 
 ## What's inside

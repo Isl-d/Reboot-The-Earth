@@ -140,6 +140,9 @@ docs/        decision policy, data pack, contracts
 pitch/       demo script and deck outline
 ```
 
+`docs/file-map.md` categorises every file in the repository — what each one
+does, which files are its neighbours, and where a new file belongs.
+
 `CLAUDE.md` is the project brief and the single source of truth for the
 contracts. Change a contract there and here in the same commit.
 
