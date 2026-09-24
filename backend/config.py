@@ -72,6 +72,16 @@ HISTORY_POINTS = _i("COLDGUARD_HISTORY_POINTS", 900)       # per truck ring buff
 COST_PER_KM_QAR = _f("COLDGUARD_COST_PER_KM_QAR", 3.5)     # diesel + driver, demo figure
 MARKDOWN_FRACTION = _f("COLDGUARD_MARKDOWN_FRACTION", 0.5)  # sell now at -50 %
 DONATION_VALUE_FRACTION = _f("COLDGUARD_DONATION_VALUE_FRACTION", 0.3)
+# Holding a load in a cold room keeps it fresh but misses today's delivery
+# slot: a renegotiation cost, not a loss of food.
+HOLD_PENALTY_FRACTION = _f("COLDGUARD_HOLD_PENALTY_FRACTION", 0.15)
+# When the two best options are this close in value, the system does not decide
+# on its own: it escalates and asks a person to choose.
+REVIEW_MARGIN_QAR = _f("COLDGUARD_REVIEW_MARGIN_QAR", 1500.0)
+# Above this value, an irreversible action (selling off or donating a load) is
+# always put to a person even when the arithmetic is clear-cut.
+REVIEW_VALUE_QAR = _f("COLDGUARD_REVIEW_VALUE_QAR", 15000.0)
+
 # Never disturb a shipment that is fine: another option must beat "continue as
 # planned" by at least this much before it is recommended.
 REROUTE_MIN_GAIN_QAR = _f("COLDGUARD_REROUTE_MIN_GAIN_QAR", 500.0)

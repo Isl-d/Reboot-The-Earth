@@ -103,8 +103,10 @@ def test_the_whole_demo(api):
             decisions = (await c.get("/api/decisions")).json()["decisions"]
             assert len(decisions) == 1
             decision = decisions[0]
-            assert [o["key"] for o in decision["options"]] == ["A", "B", "C", "D"]
+            assert [o["key"] for o in decision["options"]] == ["A", "B", "C", "D", "E", "F"]
+            assert set(decision["verbs"]) == {"continue", "reroute", "sell", "donate", "hold"}
             assert decision["recommended"] == "C"
+            assert decision["needs_human_review"] is False
             assert decision["text_en"] and decision["text_ar"]
             assert decision["text_source"] in ("template", config.OLLAMA_MODEL)
 

@@ -149,13 +149,14 @@ class Ingest:
                 product_c=truck.product_c if truck.product_c is not None else truck.product.ideal_temp_c,
                 air_c=truck.air_c if isinstance(truck.air_c, (int, float)) else None,
                 life_left_h=truck.life_left_h, route=truck.route, frac=truck.frac,
-                now=self.clock())
+                now=self.clock(), sensor_ok=truck.detector.sensor_ok)
             decision_id = state.next_decision_id()
             truck.decision_id = decision_id
 
         facts = plan.facts()
         state.bus.publish("alert", {"truck_id": truck_id, "decision_id": decision_id,
                                     "recommended": plan.recommended,
+                                    "needs_human_review": plan.needs_human_review,
                                     "product": plan.product, "air_c": plan.air_c})
         text = agent.explain(facts)                 # up to 5 s, then the template
 
@@ -168,6 +169,9 @@ class Ingest:
                 "created_at": plan.generated_at,
                 "options": [o.as_dict() for o in plan.options],
                 "recommended": plan.recommended,
+                "needs_human_review": plan.needs_human_review,
+                "review_reasons": plan.review_reasons,
+                "verbs": plan.verbs,
                 "chosen": None,
                 "chosen_option": plan.best.as_dict(),
                 "facts": facts,
@@ -187,8 +191,10 @@ class Ingest:
 
         db.insert_decision(record)
         state.bus.publish("decision", record)
-        log.info("decision %s for %s: %s (%s)", decision_id, truck_id,
-                 plan.recommended, text["source"])
+        log.info("decision %s for %s: %s%s (%s)", decision_id, truck_id,
+                 plan.recommended,
+                 " - escalated for human review" if plan.needs_human_review else "",
+                 text["source"])
 
     # ------------------------------------------------------------ watchdog
     def _watch(self) -> None:

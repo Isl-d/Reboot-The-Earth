@@ -28,12 +28,15 @@ _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")
 
 SYSTEM = """You are a cold-chain dispatcher's assistant.
 You will be given a JSON object of facts that were computed by a separate system.
-Write exactly two sentences in English and exactly two sentences in Arabic that
-explain the recommended action to a logistics manager.
+Write exactly two sentences in English and exactly two sentences in Arabic for a
+logistics manager.
 
 Rules:
 - Use ONLY numbers that appear in the JSON. Never calculate, round or invent a number.
 - Do not add numbers of your own, not even dates, times or percentages.
+- If "needs_human_review" is true, do NOT recommend anything. Say what is wrong
+  and that the manager must choose between selling, donating, holding and
+  rerouting. Otherwise, explain the recommended action.
 - Be concrete and calm. No emoji, no bullet points, no headings.
 - Reply with JSON only, in this exact shape: {"en": "...", "ar": "..."}
 """
@@ -78,6 +81,8 @@ def check_numbers(text: str, facts: dict[str, Any]) -> tuple[bool, list[str]]:
 def template(facts: dict[str, Any]) -> dict[str, str]:
     """Deterministic fallback with exactly the same numbers. Always available."""
     f = facts
+    if f.get("needs_human_review"):
+        return _review_template(f)
     en = (
         f"{f['truck_id']} is running at {f['air_c']} °C and its cargo has reached "
         f"{f['product_c']} °C, so its {f['qty_kg']} kg of {f['product']} is ageing "
@@ -96,6 +101,24 @@ def template(facts: dict[str, Any]) -> dict[str, str]:
         f"يوصى بـ {f['recommended_action_ar']} إلى {f['destination']}، ما يعيد النضارة عند الوصول "
         f"إلى {f['life_on_arrival_days']} يوم وينقذ {f['kg_saved']} كجم بقيمة تقارب "
         f"{f['value_qar']} ريال و{f['co2e_saved_kg']} كجم من ثاني أكسيد الكربون."
+    )
+    return {"en": en, "ar": ar}
+
+
+def _review_template(f: dict[str, Any]) -> dict[str, str]:
+    """What we say when the system will not decide on its own."""
+    reason_en = " ".join(f.get("review_reasons") or []) or "The numbers do not settle it."
+    en = (
+        f"{f['truck_id']} needs a person to decide: its {f['qty_kg']} kg of {f['product']} "
+        f"is at {f['product_c']} °C and would arrive with {f['if_nothing_done_days']} days "
+        f"of freshness against the {f['store_minimum_days']} days the store accepts. "
+        f"{reason_en} Choose one: sell, donate, hold or reroute."
+    )
+    ar = (
+        f"تحتاج الشاحنة {f['truck_id']} إلى قرار بشري: حمولتها {f['qty_kg']} كجم عند "
+        f"{f['product_c']} درجة مئوية وستصل بنضارة {f['if_nothing_done_days']} يوم مقابل "
+        f"{f['store_minimum_days']} يوم يطلبها المتجر. "
+        f"الخيارات المتاحة: البيع أو التبرع أو الاحتفاظ أو إعادة التوجيه."
     )
     return {"en": en, "ar": ar}
 

@@ -95,3 +95,34 @@ def test_a_slow_model_falls_back_too(facts, monkeypatch):
 
     monkeypatch.setattr(httpx, "post", timeout)
     assert agent.explain(facts)["source"] == "template"
+
+
+# ------------------------------------------------- escalation to a human
+@pytest.fixture
+def review_facts():
+    plan = planner.build_plan(
+        truck_id="TRK-07", product=get_product("lettuce"), qty_kg=2000,
+        product_c=30.0, air_c=32.0, life_left_h=30.0,
+        route=geo.load_routes()["R1"], frac=0.25, now=time.time())
+    assert plan.needs_human_review
+    return plan.facts()
+
+
+def test_the_review_text_offers_the_four_verbs(review_facts):
+    text = agent.template(review_facts)
+    for verb in ("sell", "donate", "hold", "reroute"):
+        assert verb in text["en"].lower()
+    assert "قرار بشري" in text["ar"]
+
+
+def test_the_review_text_recommends_nothing(review_facts):
+    en = agent.template(review_facts)["en"].lower()
+    assert "recommend" not in en
+    assert "needs a person to decide" in en
+
+
+def test_the_review_text_is_grounded_too(review_facts):
+    text = agent.template(review_facts)
+    for language in ("en", "ar"):
+        ok, bad = agent.check_numbers(text[language], review_facts)
+        assert ok, f"{language} invented {bad}"

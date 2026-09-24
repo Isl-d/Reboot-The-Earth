@@ -101,9 +101,10 @@ class TruckState:
         else:
             # The NodeMCU only sends temperature, so the backend supplies the
             # position: it moves TRK-07 along its route on the demo clock.
-            route_s = max(self.route.duration_min, 1.0) * 60.0
-            self.frac = min(1.0, self.frac + dt_s * config.MAP_SPEED / route_s)
-            self.lat, self.lon = self.route.point_at(self.frac)
+            if self.status not in self.STOPPED:
+                route_s = max(self.route.duration_min, 1.0) * 60.0
+                self.frac = min(1.0, self.frac + dt_s * config.MAP_SPEED / route_s)
+                self.lat, self.lon = self.route.point_at(self.frac)
 
         # Shelf life only ticks while the sensor is trusted (section 7.2), and
         # it is driven by the product temperature, not the air reading.
@@ -130,7 +131,8 @@ class TruckState:
 
     # Statuses: rolling (on the planned route), rerouted (a decision has been
     # approved), sold / donated (off the road, the clock stops).
-    OFF_ROAD = ("sold", "donated", "delivered")
+    OFF_ROAD = ("sold", "donated", "delivered")     # the shelf-life clock stops
+    STOPPED = ("sold", "donated", "delivered", "held")   # the truck stops moving
 
     @property
     def destination(self) -> geo.Place | None:

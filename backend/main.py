@@ -224,17 +224,22 @@ def approve(decision_id: str, body: ApproveBody) -> dict:
     return {"ok": True, "decision": record, "truck": snapshot}
 
 
+# What each verb does to the shipment. Nothing here moves a real truck: the
+# demo executes the decision in the model and says so (CLAUDE.md section 13).
+_STATUS_FOR = {"continue": "rolling", "reroute": "rerouted", "sell": "sold",
+               "donate": "donated", "hold": "held"}
+
+
 def _execute(truck, chosen_key: str, option: dict) -> None:
-    """Carry out an approved option. Nothing here moves a real truck."""
-    if chosen_key == "A":
-        truck.status = "rolling"
+    """Carry out an approved option."""
+    action = option.get("action", "continue")
+    truck.status = _STATUS_FOR.get(action, "rolling")
+    if action == "continue":
         truck.override_destination = None
         truck.reroute_geometry = None
         return
     dest = geo.load_places().get(option["destination_id"])
     truck.override_destination = option["destination_id"]
-    truck.status = "donated" if "donate" in option["title_en"].lower() else (
-        "sold" if chosen_key == "D" else "rerouted")
     if dest is not None:
         # No router offline: the new leg is drawn as a direct line and labelled.
         truck.reroute_geometry = [[truck.lon, truck.lat], [dest.lon, dest.lat]]
