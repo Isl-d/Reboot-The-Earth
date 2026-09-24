@@ -133,6 +133,13 @@ instead, which is the authoritative record:
   `"memory"`) when the store is unreachable, and `?source=memory` forces that.
 * Open incidents are reloaded at startup, so killing the service mid-excursion
   does not empty the incident panel or let the next reading open a duplicate.
+* The fleet is rehydrated from Redis at startup — that is what the cache is
+  for. Without it `GET /api/trucks` reports nulls for every field until the
+  next reading arrives, which on stage is a blank map. Only measured fields
+  come back; derived values start clean, because they are accumulations over
+  a stream this process has not seen and restoring them would be a fiction.
+  Cached payloads are validated through the model, so a corrupt entry is
+  skipped rather than putting a string where the dashboard expects a number.
 * A run left open by a process that died is closed at the newest reading in
   the store, not at `now`, so its duration is not inflated by the downtime.
 

@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
 
     queries.close_stale_runs()
     pipeline.load_open_incidents(queries.open_incidents())
+    pipeline.load_cached_states()
 
     if consumer.start():
         try:

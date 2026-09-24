@@ -18,6 +18,10 @@ import threading
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+# Aliased: validation.ValidationError below is a different class
+# and would otherwise shadow this one.
+from pydantic import ValidationError as PydanticValidationError
+
 from .. import cache, config, fleet
 from ..util import camelize
 from ..db import models, session as db
@@ -74,6 +78,65 @@ class Pipeline:
                     safe_max_temp_c=batch["safe_max_temp_c"] if batch else None,
                 )
                 self.accumulators[t["id"]] = TruckAccumulator(t["id"])
+
+    def load_cached_states(self) -> int:
+        """Rehydrate the fleet from Redis after a restart.
+
+        This is what the cache is for (spec, section 7): current state lives
+        in Redis so it does not have to be rebuilt from the historical table.
+        Without it, `GET /api/trucks` reports nulls for every field until the
+        next reading arrives — on stage, a blank map for however long that
+        takes.
+
+        Only the measured fields are restored. Derived values stay at zero
+        because they are accumulations over a stream this process has not
+        seen, and reporting a carried-over thermal exposure as if it had been
+        observed here would be a fiction.
+        """
+        restored = 0
+        for state in cache.all_latest():
+            truck_id = state.get("truckId")
+            if not truck_id:
+                continue
+
+            with self.lock:
+                existing = self.trucks.get(truck_id)
+                base = (existing.model_dump(by_alias=True, mode="json")
+                        if existing else {"truckId": truck_id})
+
+            # Only the measured fields come back. Everything else — the batch,
+            # the safe limits — stays as the reference data defines it.
+            merged = dict(base)
+            for field in ("deviceId", "latitude", "longitude", "temperatureC",
+                          "humidityPct", "speedKmh", "gForce", "doorOpen",
+                          "refrigerationOn", "timestamp", "status",
+                          "riskScore", "riskLevel"):
+                if state.get(field) is not None:
+                    merged[field] = state[field]
+
+            # Validate rather than assign. Pydantic does not check assignment,
+            # so a corrupt cache entry would otherwise put a string where the
+            # dashboard expects a number and break the chart rather than this.
+            try:
+                truck = TruckState.model_validate(merged)
+            except PydanticValidationError as exc:
+                log.warning("ignoring unusable cached state for %s: %s",
+                            truck_id, exc.error_count())
+                continue
+
+            # Derived values are accumulations over a stream this process has
+            # not seen, so they start clean instead of being restored as if
+            # they had been observed here.
+            truck.derived = Derived()
+
+            with self.lock:
+                self.trucks[truck_id] = truck
+                self.accumulators.setdefault(truck_id, TruckAccumulator(truck_id))
+            restored += 1
+
+        if restored:
+            log.info("restored %d truck state(s) from the cache", restored)
+        return restored
 
     def load_open_incidents(self, rows: list) -> int:
         """Rehydrate incidents left open by a previous process.
