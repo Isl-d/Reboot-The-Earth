@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ColdGuard - {{ truck.truck_id }}</title>
+<style>
+  :root {
+    --bg:#0b1220; --card:#131c2e; --line:#243349; --text:#e8eef7; --muted:#93a4bd;
+    --green:#2fbf71; --amber:#f0a92b; --red:#e2564b; --accent:#4fa8ff;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .wrap { max-width:520px; margin:0 auto; padding:16px; }
+  h1 { font-size:22px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; padding:6px 0; }
+  .row + .row { border-top:1px solid var(--line); }
+  .k { color:var(--muted); font-size:14px; }
+  .v { font-variant-numeric:tabular-nums; font-weight:600; }
+  .big { font-size:40px; font-weight:700; letter-spacing:-1px; }
+  .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; }
+  .green { background:rgba(47,191,113,.16); color:var(--green); }
+  .amber { background:rgba(240,169,43,.16); color:var(--amber); }
+  .red   { background:rgba(226,86,75,.16); color:var(--red); }
+  .unknown { background:rgba(147,164,189,.16); color:var(--muted); }
+  .bar { height:10px; border-radius:999px; background:#1d293d; overflow:hidden; margin-top:8px; }
+  .bar > span { display:block; height:100%; border-radius:999px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:7px 0; font-size:14px; border-top:1px solid var(--line); }
+  li:first-child { border-top:0; }
+  .muted { color:var(--muted); }
+  .ar { direction:rtl; text-align:right; }
+  footer { color:var(--muted); font-size:12px; text-align:center; padding:12px 0 28px; }
+  svg { width:100%; height:90px; display:block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ truck.truck_id }} &middot; {{ truck.product }}</h1>
+  <div class="sub">{{ truck.qty_kg | round | int }} kg &middot; {{ truck.route_name }} &middot;
+    {% if truck.live_sensor %}live sensor on board{% else %}simulated truck{% endif %}
+    &middot; demo clock &times;{{ demo_speed | round | int }}</div>
+
+  <div class="card">
+    <span class="pill {{ truck.risk }}">
+      {% if truck.risk == 'green' %}Accepted on arrival
+      {% elif truck.risk == 'amber' %}Below the store minimum
+      {% elif truck.risk == 'red' %}Not deliverable
+      {% else %}Sensor unknown{% endif %}
+    </span>
+    <div class="big">{{ '%.1f'|format(truck.air_c or 0) }} &deg;C</div>
+    <div class="muted">air in the box &middot; cargo at
+      {{ '%.1f'|format(truck.product_c or 0) }} &deg;C</div>
+    <div class="bar"><span style="width:{{ truck.freshness_pct }}%;
+      background:var(--{{ 'green' if truck.risk in ['green'] else ('amber' if truck.risk == 'amber' else 'red') }})"></span></div>
+    <div class="muted" style="margin-top:6px">freshness {{ truck.freshness_pct }} %</div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="k">Shelf life left</span><span class="v">{{ truck.life_left_days }} days</span></div>
+    <div class="row"><span class="k">Freshness on arrival</span><span class="v">{{ truck.life_on_arrival_days }} days</span></div>
+    <div class="row"><span class="k">Store needs at least</span><span class="v">{{ truck.min_life_on_arrival_days }} days</span></div>
+    <div class="row"><span class="k">Ageing speed</span><span class="v">&times;{{ truck.aging_speed }}</span></div>
+    <div class="row"><span class="k">Going to</span><span class="v">{{ truck.destination_name }}</span></div>
+  </div>
+
+  {% if points %}
+  <div class="card">
+    <div class="k" style="margin-bottom:6px">Temperature history (air and cargo)</div>
+    <svg viewBox="0 0 300 90" preserveAspectRatio="none" id="chart"></svg>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="k" style="margin-bottom:6px">What happened</div>
+    <ul>
+      {% for e in events %}
+      <li><strong>{{ e.type.replace('_',' ') }}</strong> &mdash; {{ e.note }}
+        {% if e.peak_c %}<span class="muted">(peak {{ '%.1f'|format(e.peak_c) }} &deg;C)</span>{% endif %}</li>
+      {% else %}
+      <li class="muted">Nothing unusual so far.</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="card ar">
+    <div class="k">جواز نضارة الشحنة</div>
+    <div>الشحنة {{ truck.truck_id }} تحمل {{ truck.qty_kg | round | int }} كجم، والنضارة المتبقية
+      {{ truck.life_left_days }} يوم.</div>
+  </div>
+
+  <footer>ColdGuard &middot; open data, local AI, no cloud &middot; numbers computed on the laptop</footer>
+</div>
+<script>
+  const points = {{ points_json | safe }};
+  const svg = document.getElementById('chart');
+  if (svg && points.length > 1) {
+    const temps = points.flatMap(p => [p.air_c, p.product_c]).filter(v => typeof v === 'number');
+    const lo = Math.min(...temps) - 1, hi = Math.max(...temps) + 1;
+    const x = i => (i / (points.length - 1)) * 300;
+    const y = v => 85 - ((v - lo) / Math.max(hi - lo, 0.1)) * 80;
+    const path = (key, colour, width) => {
+      const d = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[key] ?? lo).toFixed(1)}`).join('');
+      return `<path d="${d}" fill="none" stroke="${colour}" stroke-width="${width}" stroke-linejoin="round"/>`;
+    };
+    svg.innerHTML = path('air_c', '#4fa8ff', 1.6) + path('product_c', '#f0a92b', 2.2);
+  }
+  setTimeout(() => location.reload(), 5000);
+</script>
+</body>
+</html>

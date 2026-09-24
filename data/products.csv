@@ -1,0 +1,4 @@
+product,ideal_temp_c,life_at_ideal_days,q10,alert_limit_c,min_life_on_arrival_days,value_qar_per_kg,source_note
+lettuce,2,10,3,8,6,10,"Storage guidance: 0-2 C, high humidity, about 2-3 weeks (USDA Agriculture Handbook 66). Life and Q10 set conservatively for the demo; calibrate with pilot data."
+chicken,2,5,3,4,3,20,Fresh poultry must stay chilled at or below 4 C. Life and Q10 are demo assumptions; calibrate with pilot data.
+milk,4,10,3,7,6,6,Pasteurised milk kept at or below 4 C. Life and Q10 are demo assumptions; calibrate with pilot data.

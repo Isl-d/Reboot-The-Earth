@@ -1,0 +1,7 @@
+route_id,route,best_departure,mean_temp_best_c,worst_departure,mean_temp_worst_c,freshness_saved_hours_loading,source
+R1,Hamad Port to Industrial Area warehouse,05:00,31.7,14:00,40.4,1.7,synthetic typical September curve
+R2,Industrial Area warehouse to Al Wakrah,05:00,31.1,14:00,40.5,1.7,synthetic typical September curve
+R3,Industrial Area warehouse to Lusail,05:00,31.7,14:00,40.4,1.7,synthetic typical September curve
+R4,Abu Samra border to Industrial Area warehouse,05:00,32.3,13:00,40.4,1.6,synthetic typical September curve
+R5,Industrial Area warehouse to Al Khor,05:00,31.7,14:00,40.4,1.7,synthetic typical September curve
+R6,Industrial Area warehouse to Al Rayyan,05:00,31.1,14:00,40.5,1.7,synthetic typical September curve

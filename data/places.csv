@@ -1,0 +1,11 @@
+place_id,name,type,lat,lon,has_cold_room,source
+hamad_port,Hamad Port,port,25.0,51.605,False,approximate area location
+abu_samra,Abu Samra border crossing,border,24.75,50.84,False,approximate area location
+wh_industrial,Cold warehouse - Industrial Area,warehouse,25.19,51.43,True,approximate area location
+cs_wakrah,Cold store - Al Wakrah,cold_store,25.16,51.59,True,approximate area location
+store_wakrah,Supermarket - Al Wakrah,store,25.17,51.6,False,approximate area location
+store_doha,Supermarket - Central Doha,store,25.285,51.53,False,approximate area location
+store_lusail,Supermarket - Lusail,store,25.42,51.49,False,approximate area location
+store_khor,Supermarket - Al Khor,store,25.68,51.5,False,approximate area location
+store_rayyan,Supermarket - Al Rayyan,store,25.29,51.42,False,approximate area location
+foodbank_doha,Food bank partner - Doha,food_bank,25.27,51.51,True,approximate area location
