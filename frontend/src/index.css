@@ -1,0 +1,144 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap");
+@import "tailwindcss";
+
+@theme {
+  --color-base: #0c1825;
+  --color-surface: #162338;
+  --color-elevated: #1e3048;
+  --color-primary: #00c8e0;
+  --color-primary-dim: #0090a8;
+  --color-text-primary: #c9d6e8;
+  --color-text-secondary: #8fa8c8;
+  --color-risk-low: #22d4b0;
+  --color-risk-medium: #fbbf24;
+  --color-risk-high: #fb923c;
+  --color-risk-critical: #f87171;
+  --color-border: #2d4160;
+
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  --text-display: 32px;
+  --text-h1: 24px;
+  --text-h2: 18px;
+  --text-h3: 15px;
+  --text-body: 14px;
+  --text-sm: 12px;
+  --text-label: 11px;
+  --text-mono-lg: 20px;
+  --text-mono-md: 14px;
+  --text-mono-sm: 12px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+
+  --animate-slide-in-up: slide-in-up 0.35s ease-out both;
+  --animate-count-up: count-up 0.5s ease-out both;
+  --animate-ring: ring 0.6s ease-in-out;
+  --animate-glow-critical: glow-critical 2s ease-in-out infinite;
+}
+
+/* ── Light mode overrides ──────────────────────────────────── */
+[data-theme="light"] {
+  --color-base: #eef2f7;
+  --color-surface: #ffffff;
+  --color-elevated: #dde5f0;
+  --color-primary: #0090a8;
+  --color-primary-dim: #007080;
+  --color-text-primary: #0d1b2a;
+  --color-text-secondary: #3d5a80;
+  --color-border: #bccada;
+  --color-risk-low: #0a9e88;
+  --color-risk-medium: #c8880a;
+  --color-risk-high: #c85010;
+  --color-risk-critical: #c02020;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-base);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { height: 100%; display: flex; }
+
+/* ── Keyframe animations ───────────────────────────────────── */
+@keyframes slide-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes count-up {
+  from { opacity: 0; transform: scale(0.82); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes ring {
+  0%,100% { transform: rotate(0deg); }
+  20%     { transform: rotate(-14deg); }
+  40%     { transform: rotate(14deg); }
+  60%     { transform: rotate(-9deg); }
+  80%     { transform: rotate(9deg); }
+}
+@keyframes glow-critical {
+  0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,0); }
+  50%     { box-shadow: 0 0 16px 4px rgba(248,113,113,0.3); }
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.6; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Leaflet map dark mode ─────────────────────────────────── */
+.leaflet-container {
+  background: var(--color-base) !important;
+  font-family: var(--font-sans) !important;
+}
+.leaflet-container .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%) saturate(0.6);
+  transition: filter 0.3s ease;
+}
+[data-theme="light"] .leaflet-container .leaflet-tile-pane {
+  filter: none;
+}
+[data-theme="light"] .leaflet-container {
+  background: #e8eff8 !important;
+}
+
+/* Leaflet popup dark styling */
+.leaflet-popup-content-wrapper {
+  background: var(--color-elevated) !important;
+  color: var(--color-text-primary) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+}
+.leaflet-popup-tip {
+  background: var(--color-elevated) !important;
+}
+.leaflet-popup-content { margin: 10px 14px !important; }
+
+/* Permanent map labels */
+.map-label {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8), 0 0 6px rgba(0,0,0,0.5);
+}
