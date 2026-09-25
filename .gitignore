@@ -18,3 +18,6 @@ coldchain.db
 coldchain/**/__pycache__/
 # Redis writes its snapshot into the working directory when run locally.
 dump.rdb
+
+# Scratch copies pulled from another repository for reading, not our content.
+pitch-from-coldchain-repo/
