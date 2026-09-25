@@ -150,3 +150,77 @@ def runs(limit: int = 20) -> list[dict[str, Any]]:
         "speedMultiplier": r.speed_multiplier,
         "seed": r.seed,
     } for r in rows]
+
+
+# ------------------------------------------------------- reference data
+#
+# These tables are seeded from fleet.py, but once seeded the database is the
+# authoritative copy: a warehouse's available capacity changes as stock moves,
+# and Person 4 picks a destination from it. Serving the hard-coded constants
+# instead would mean that column could never change.
+#
+# Each falls back to fleet.py when the store is empty or unreachable, so the
+# API still answers on a laptop with no database.
+
+def _rows(model, to_dict, fallback):
+    try:
+        with db.session() as s:
+            rows = list(s.execute(select(model)).scalars())
+    except Exception as exc:                          # noqa: BLE001 - demo safety
+        log.warning("reference query failed (%s) - serving fleet.py", exc)
+        return fallback(), "fallback"
+    if not rows:
+        return fallback(), "fallback"
+    return [to_dict(r) for r in rows], "database"
+
+
+def _warehouse(r) -> dict[str, Any]:
+    return {"id": r.id, "name": r.name, "latitude": r.latitude,
+            "longitude": r.longitude, "capacityKg": r.capacity_kg,
+            "availableCapacityKg": r.available_capacity_kg,
+            "minTempC": r.min_temp_c, "maxTempC": r.max_temp_c}
+
+
+def _store(r) -> dict[str, Any]:
+    return {"id": r.id, "name": r.name, "latitude": r.latitude,
+            "longitude": r.longitude}
+
+
+def _batch(r) -> dict[str, Any]:
+    return {"id": r.id, "productId": r.product_id, "quantityKg": r.quantity_kg,
+            "productionDate": r.production_date, "expiryDate": r.expiry_date,
+            "safeMinTempC": r.safe_min_temp_c, "safeMaxTempC": r.safe_max_temp_c,
+            "initialShelfLifeHours": r.initial_shelf_life_hours,
+            "truckId": r.truck_id}
+
+
+def warehouses() -> tuple[list[dict[str, Any]], str]:
+    from .. import fleet
+    from ..util import camelize
+
+    return _rows(models.Warehouse, _warehouse,
+                 lambda: camelize(fleet.WAREHOUSES))
+
+
+def stores() -> tuple[list[dict[str, Any]], str]:
+    from .. import fleet
+    from ..util import camelize
+
+    return _rows(models.Store, _store, lambda: camelize(fleet.STORES))
+
+
+def batches() -> tuple[list[dict[str, Any]], str]:
+    from .. import fleet
+    from ..util import camelize
+
+    return _rows(models.ProductBatch, _batch, lambda: camelize(fleet.BATCHES))
+
+
+def warehouse(warehouse_id: str) -> dict[str, Any] | None:
+    rows, _ = warehouses()
+    return next((w for w in rows if w["id"] == warehouse_id), None)
+
+
+def batch(batch_id: str) -> dict[str, Any] | None:
+    rows, _ = batches()
+    return next((b for b in rows if b["id"] == batch_id), None)

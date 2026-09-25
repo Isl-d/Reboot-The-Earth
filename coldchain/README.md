@@ -143,6 +143,17 @@ instead, which is the authoritative record:
 * A run left open by a process that died is closed at the newest reading in
   the store, not at `now`, so its duration is not inflated by the downtime.
 
+## Reference data
+
+`fleet.py` defines the demo world and seeds it. After that the database is the
+authoritative copy, because some of it changes: a warehouse's available
+capacity moves as stock does, and that is the column Person 4 picks a
+destination by. `/api/warehouses`, `/api/stores` and `/api/inventory` read the
+tables and report `"source": "database"`; they fall back to `fleet.py` (and
+say `"fallback"`) when the store is empty or unreachable, so the API still
+answers on a laptop with nothing installed. The `candidateWarehouses` in the
+Person 4 bundle carries the live capacity for the same reason.
+
 ## Migrations
 
 `create_all` is how the demo comes up from nothing. Once teammates have data

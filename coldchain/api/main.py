@@ -158,20 +158,22 @@ def get_telemetry(truck_id: str, limit: int = 200,
 # --------------------------------------------------- reference geography
 @app.get("/api/warehouses")
 def list_warehouses() -> dict:
-    return {"warehouses": camelize(fleet.WAREHOUSES)}
+    rows, source = queries.warehouses()
+    return {"warehouses": rows, "source": source}
 
 
 @app.get("/api/warehouses/{warehouse_id}")
 def get_warehouse(warehouse_id: str) -> dict:
-    w = next((w for w in fleet.WAREHOUSES if w["id"] == warehouse_id), None)
+    w = queries.warehouse(warehouse_id)
     if w is None:
         raise HTTPException(404, f"no warehouse {warehouse_id}")
-    return camelize(w)
+    return w
 
 
 @app.get("/api/stores")
 def list_stores() -> dict:
-    return {"stores": camelize(fleet.STORES)}
+    rows, source = queries.stores()
+    return {"stores": rows, "source": source}
 
 
 @app.get("/api/routes")
@@ -185,29 +187,30 @@ def list_routes() -> dict:
 @app.get("/api/inventory")
 def list_inventory() -> dict:
     rows = []
-    for b in fleet.BATCHES:
-        product = fleet.product_by_id(b["product_id"])
+    batches, source = queries.batches()
+    for b in batches:
+        product = fleet.product_by_id(b["productId"])
         state = next((s for s in pipeline.fleet_states()
-                      if s.truck_id == b["truck_id"]), None)
-        rows.append({**camelize(b),
-                     "productName": product["name"] if product else b["product_id"],
-                     "locationId": b["truck_id"],
+                      if s.truck_id == b["truckId"]), None)
+        rows.append({**b,
+                     "productName": product["name"] if product else b["productId"],
+                     "locationId": b["truckId"],
                      "locationKind": "TRUCK",
                      "riskLevel": state.risk_level if state else "UNKNOWN",
                      "riskScore": state.risk_score if state else None})
-    return {"inventory": rows}
+    return {"inventory": rows, "source": source}
 
 
 @app.get("/api/inventory/{batch_id}")
 def get_batch(batch_id: str) -> dict:
-    b = next((b for b in fleet.BATCHES if b["id"] == batch_id), None)
+    b = queries.batch(batch_id)
     if b is None:
         raise HTTPException(404, f"no batch {batch_id}")
-    product = fleet.product_by_id(b["product_id"])
+    product = fleet.product_by_id(b["productId"])
     state = next((s for s in pipeline.fleet_states()
-                  if s.truck_id == b["truck_id"]), None)
-    return {**camelize(b),
-            "productName": product["name"] if product else b["product_id"],
+                  if s.truck_id == b["truckId"]), None)
+    return {**b,
+            "productName": product["name"] if product else b["productId"],
             "valueQarPerKg": product["value_qar_per_kg"] if product else None,
             "truck": state.model_dump(by_alias=True, mode="json") if state else None}
 

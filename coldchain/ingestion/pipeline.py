@@ -24,7 +24,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from .. import cache, config, fleet
 from ..util import camelize
-from ..db import models, session as db
+from ..db import models, queries, session as db
 from ..schemas import Derived, Incident, Telemetry, TruckState
 from .derived import TruckAccumulator
 from .validation import ValidationError, normalize
@@ -367,7 +367,9 @@ class Pipeline:
             "truck": truck.model_dump(by_alias=True, mode="json"),
             "batch": camelize(batch),
             "recentTelemetry": recent,
-            "candidateWarehouses": camelize(fleet.WAREHOUSES),
+            # Live capacity: Person 4 picks a destination from this, and
+            # available space changes as stock moves.
+            "candidateWarehouses": queries.warehouses()[0],
         }
 
     def apply_prediction(self, p: dict) -> Optional[TruckState]:
