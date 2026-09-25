@@ -127,6 +127,52 @@ class TruckState(Wire):
     risk_level: str = "UNKNOWN"
 
 
+# ------------------------------------------------------------- device events
+#
+# The brief names `coldchain/trucks/{truckId}/events` but does not define its
+# payload, so this contract is ours. It exists because a device can report a
+# door opening the instant it happens, while telemetry only arrives every
+# 2-5 s — and a door state is what explains a temperature excursion.
+#
+# Events say what the device observed. They never carry a risk or a
+# prediction; that boundary is the same as everywhere else in this service.
+
+DeviceEventType = Literal["DOOR_OPENED", "DOOR_CLOSED", "REFRIGERATION_ON",
+                          "REFRIGERATION_OFF", "SHOCK", "POWER_LOST",
+                          "POWER_RESTORED", "SENSOR_FAULT"]
+
+DEVICE_EVENT_TYPES = ("DOOR_OPENED", "DOOR_CLOSED", "REFRIGERATION_ON",
+                      "REFRIGERATION_OFF", "SHOCK", "POWER_LOST",
+                      "POWER_RESTORED", "SENSOR_FAULT")
+
+
+class DeviceEventIn(Wire):
+    """A raw event as it arrives on the events topic."""
+
+    device_id: Optional[str] = None
+    truck_id: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    type: Optional[str] = None
+    detail: Optional[str] = None
+    value: Optional[float] = None
+
+
+class DeviceEvent(Wire):
+    """A validated device event."""
+
+    device_id: str
+    truck_id: str
+    timestamp: datetime
+    type: DeviceEventType
+    detail: str = ""
+    value: Optional[float] = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def _utc(cls, v: datetime) -> datetime:
+        return v.astimezone(timezone.utc) if v.tzinfo else v.replace(tzinfo=timezone.utc)
+
+
 # ------------------------------------------------------------------ reference
 class Warehouse(Wire):
     id: str

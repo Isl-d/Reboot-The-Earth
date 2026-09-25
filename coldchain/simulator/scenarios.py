@@ -46,6 +46,7 @@ class SimTruck:
     progress_km: float = 0.0
     elapsed_s: float = 0.0
     _scenario_started_s: float = 0.0
+    _pending_events: list = field(default_factory=list)
     _route: dict = field(init=False)
     _length_km: float = field(init=False)
 
@@ -62,8 +63,14 @@ class SimTruck:
         self.scenario = scenario
         self._scenario_started_s = self.elapsed_s
         # Faults that are a state, not a drift, take effect at once.
+        was_door, was_fridge = self.door_open, self.refrigeration_on
         self.door_open = scenario in (DOOR_LEFT_OPEN, COMBINED_FAILURE)
         self.refrigeration_on = scenario not in (REFRIGERATION_FAILURE, COMBINED_FAILURE)
+        if self.door_open != was_door:
+            self._event("DOOR_OPENED" if self.door_open else "DOOR_CLOSED")
+        if self.refrigeration_on != was_fridge:
+            self._event("REFRIGERATION_ON" if self.refrigeration_on
+                        else "REFRIGERATION_OFF", "reported by the unit")
 
     # ------------------------------------------------------------- physics
     def _target_and_rate(self) -> tuple[float, float]:
@@ -93,9 +100,29 @@ class SimTruck:
             return 8.0
         return CRUISE_KMH
 
+    def drain_events(self) -> list[dict]:
+        """Device events since the last call: what changed, the moment it did.
+
+        A real unit reports a door or a compressor the instant it trips,
+        rather than waiting for the next telemetry tick.
+        """
+        out, self._pending_events = self._pending_events, []
+        return out
+
+    def _event(self, kind: str, detail: str = "", value: float | None = None) -> None:
+        self._pending_events.append({
+            "deviceId": fleet.device_id(self.truck_id),
+            "truckId": self.truck_id,
+            "timestamp": self._stamp(),
+            "type": kind,
+            "detail": detail,
+            "value": value,
+        })
+
     def step(self, dt_s: float) -> dict:
         """Advance by dt_s seconds and return one telemetry payload."""
         self.elapsed_s += dt_s
+        was_door, was_fridge = self.door_open, self.refrigeration_on
 
         target_c, rate = self._target_and_rate()
         self.temperature_c += (target_c - self.temperature_c) * min(1.0, rate)
@@ -114,6 +141,13 @@ class SimTruck:
         self.g_force = round(abs(self.rng.gauss(0.18, 0.08)), 2)
         if self.rng.random() < 0.01:
             self.g_force = round(self.rng.uniform(2.1, 3.4), 2)
+            self._event("SHOCK", "rough handling detected", self.g_force)
+
+        if self.door_open != was_door:
+            self._event("DOOR_OPENED" if self.door_open else "DOOR_CLOSED")
+        if self.refrigeration_on != was_fridge:
+            self._event("REFRIGERATION_ON" if self.refrigeration_on
+                        else "REFRIGERATION_OFF", "reported by the unit")
 
         self.progress_km = min(self._length_km,
                                self.progress_km + self.speed_kmh * (dt_s / 3600.0))

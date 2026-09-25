@@ -120,6 +120,17 @@ class SimulationRunner:
         for truck in trucks:
             payload = truck.step(dt)
             payloads.append(payload)
+
+            # Events first: a door that just opened explains the reading that
+            # follows it, and arriving after would read as a contradiction.
+            events_topic = config.EVENTS_TOPIC.format(truck_id=truck.truck_id)
+            for event in truck.drain_events():
+                try:
+                    self.sink(events_topic, event)
+                except Exception as exc:               # noqa: BLE001
+                    log.warning("event publish failed for %s: %s",
+                                truck.truck_id, exc)
+
             topic = config.TELEMETRY_TOPIC.format(truck_id=truck.truck_id)
             try:
                 self.sink(topic, payload)
@@ -130,9 +141,17 @@ class SimulationRunner:
 
 # ---------------------------------------------------------------- sinks
 def direct_sink(pipeline: Any) -> Sink:
-    """Feed the pipeline in-process; no broker involved."""
+    """Feed the pipeline in-process; no broker involved.
+
+    Routes by topic exactly as the MQTT consumer does. Without this an event
+    would be handed to the telemetry path and rejected for having no
+    temperature — the no-broker mode has to behave like the real one.
+    """
     def sink(topic: str, payload: dict) -> None:
-        pipeline.handle_payload(payload, topic=topic)
+        if topic.endswith("/events"):
+            pipeline.handle_event_payload(payload, topic=topic)
+        else:
+            pipeline.handle_payload(payload, topic=topic)
     return sink
 
 

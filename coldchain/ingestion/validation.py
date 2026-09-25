@@ -18,7 +18,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from .. import clock, config
-from ..schemas import Telemetry, TelemetryIn
+from ..schemas import (DEVICE_EVENT_TYPES, DeviceEvent, DeviceEventIn,
+                       Telemetry, TelemetryIn)
 
 
 class ValidationError(Exception):
@@ -127,3 +128,62 @@ def normalize(payload: dict[str, Any], *, topic: str | None = None,
         door_open=bool(raw.door_open) if raw.door_open is not None else False,
         refrigeration_on=bool(raw.refrigeration_on) if raw.refrigeration_on is not None else True,
     )
+
+
+def _truck_from_topic(topic: str | None) -> Optional[str]:
+    if not topic:
+        return None
+    parts = topic.split("/")
+    if len(parts) >= 3 and parts[0] == "coldchain" and parts[1] == "trucks":
+        return parts[2]
+    return None
+
+
+def normalize_event(payload: dict[str, Any], *, topic: str | None = None,
+                    now: datetime | None = None) -> DeviceEvent:
+    """Validate a device event, or raise.
+
+    Identity is recovered the same way as telemetry — payload, then deviceId,
+    then topic — so a device that reports events but not its own id still
+    works. An unknown event type is rejected rather than stored: a type the
+    dashboard cannot render is not useful, and inventing a catch-all would
+    hide a device sending the wrong thing.
+    """
+    now = now or clock.now()
+
+    try:
+        raw = DeviceEventIn.model_validate(payload)
+    except Exception as exc:                        # noqa: BLE001
+        raise ValidationError("unparseable", f"event did not parse: {exc}") from exc
+
+    topic_truck = _truck_from_topic(topic)
+    truck_id = raw.truck_id or _truck_from_device(raw.device_id) or topic_truck
+    if not truck_id:
+        raise ValidationError("missing_truck_id",
+                              "no truckId, no deviceId to derive it from, and no topic")
+    if topic_truck and raw.truck_id and topic_truck != raw.truck_id:
+        raise ValidationError(
+            "truck_id_conflict",
+            f"topic says {topic_truck} but the payload says {raw.truck_id}")
+
+    if not raw.type:
+        raise ValidationError("missing_event_type", "no type in the payload")
+    kind = str(raw.type).upper()
+    if kind not in DEVICE_EVENT_TYPES:
+        raise ValidationError(
+            "unknown_event_type",
+            f"{kind!r} is not one of {', '.join(DEVICE_EVENT_TYPES)}")
+
+    ts = raw.timestamp or now
+    ts = ts.astimezone(timezone.utc) if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    skew = (ts - now).total_seconds()
+    if skew > config.CLOCK_SKEW_FUTURE_S:
+        raise ValidationError("timestamp_in_future",
+                              f"timestamp is {skew:.0f}s ahead of the server clock")
+    if -skew > config.CLOCK_SKEW_PAST_S:
+        raise ValidationError("timestamp_too_old",
+                              f"timestamp is {-skew:.0f}s behind the server clock")
+
+    return DeviceEvent(device_id=raw.device_id or f"TRUCK-{truck_id}",
+                       truck_id=truck_id, timestamp=ts, type=kind,
+                       detail=raw.detail or "", value=raw.value)

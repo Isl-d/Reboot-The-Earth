@@ -106,3 +106,46 @@ def test_a_malformed_message_is_rejected_not_crashed(wired):
     time.sleep(0.5)
     runner.tick()
     assert wait_for(lambda: consumer.connected)
+
+
+def test_device_events_cross_the_broker_too(wired):
+    """The events topic was subscribed and discarded until now."""
+    import json
+
+    import paho.mqtt.publish as publish
+
+    pipeline, consumer, runner = wired
+    topic = config.EVENTS_TOPIC.format(truck_id="T102")
+    publish.single(topic, json.dumps({"truckId": "T102", "type": "DOOR_OPENED",
+                                      "detail": "lid lifted"}),
+                   hostname=config.MQTT_HOST, port=config.MQTT_PORT)
+
+    assert wait_for(lambda: any(e.type == "DOOR_OPENED"
+                                for e in pipeline.device_events())), \
+        "no device event arrived over the broker"
+    t = next(x for x in pipeline.fleet_states() if x.truck_id == "T102")
+    assert t.door_open is True
+    assert pipeline.rejected == []
+
+
+def test_the_simulator_publishes_events_over_the_broker(wired):
+    pipeline, consumer, runner = wired
+    runner.set_scenario("T102", scenarios.REFRIGERATION_FAILURE)
+    runner.tick()
+
+    assert wait_for(lambda: any(e.type == "REFRIGERATION_OFF"
+                                for e in pipeline.device_events())), \
+        "the simulator's event never arrived"
+
+
+def test_an_unknown_event_type_is_rejected_over_the_broker(wired):
+    import json
+
+    import paho.mqtt.publish as publish
+
+    pipeline, consumer, runner = wired
+    publish.single(config.EVENTS_TOPIC.format(truck_id="T102"),
+                   json.dumps({"truckId": "T102", "type": "NOT_A_TYPE"}),
+                   hostname=config.MQTT_HOST, port=config.MQTT_PORT)
+    assert wait_for(lambda: any(r["reason"] == "unknown_event_type"
+                                for r in pipeline.rejected))

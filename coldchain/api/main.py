@@ -155,6 +155,24 @@ def get_telemetry(truck_id: str, limit: int = 200,
             "points": points}
 
 
+@app.get("/api/trucks/{truck_id}/events")
+def get_truck_events(truck_id: str, limit: int = 100) -> dict:
+    """Device events for one truck, oldest first."""
+    if not any(s.truck_id == truck_id for s in pipeline.fleet_states()):
+        raise HTTPException(404, f"no truck {truck_id}")
+    events = pipeline.device_events(truck_id, limit)
+    return {"truckId": truck_id, "count": len(events),
+            "events": [e.model_dump(by_alias=True, mode="json") for e in events]}
+
+
+@app.get("/api/device-events")
+def list_device_events(limit: int = 100) -> dict:
+    """Device events across the fleet."""
+    events = pipeline.device_events(None, limit)
+    return {"count": len(events),
+            "events": [e.model_dump(by_alias=True, mode="json") for e in events]}
+
+
 # --------------------------------------------------- reference geography
 @app.get("/api/warehouses")
 def list_warehouses() -> dict:

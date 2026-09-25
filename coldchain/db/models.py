@@ -164,3 +164,19 @@ class SimulationRun(Base):
     scenario: Mapped[str] = mapped_column(String(32), default="NORMAL")
     speed_multiplier: Mapped[float] = mapped_column(Float, default=1.0)
     seed: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DeviceEventRow(Base):
+    """What a device reported between telemetry ticks."""
+
+    __tablename__ = "device_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    truck_id: Mapped[str] = mapped_column(String(32), index=True)
+    device_id: Mapped[str] = mapped_column(String(48))
+    type: Mapped[str] = mapped_column(String(32))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    __table_args__ = (Index("ix_device_events_truck_ts", "truck_id", "ts"),)

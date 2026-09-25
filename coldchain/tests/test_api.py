@@ -241,3 +241,37 @@ def test_simulation_runs_are_recorded(client):
         current = next(r for r in runs if r["id"] == started["runId"])
         assert current["speedMultiplier"] == 4.0
         assert current["stoppedAt"] is not None       # stop closed it
+
+
+def test_device_events_are_served_per_truck_and_fleet_wide(client):
+    client.post("/api/simulation/scenario",
+                json={"truckId": "T102", "scenario": "DOOR_LEFT_OPEN"})
+    for _ in range(3):
+        client.post("/api/simulation/tick")
+
+    assert wait_for(lambda: client.get(
+        "/api/trucks/T102/events").json()["count"] >= 1), "no device event surfaced"
+
+    body = client.get("/api/trucks/T102/events").json()
+    assert body["truckId"] == "T102"
+    assert any(e["type"] == "DOOR_OPENED" for e in body["events"])
+    for key in ("deviceId", "truckId", "timestamp", "type"):
+        assert key in body["events"][0]
+
+    assert client.get("/api/device-events").json()["count"] >= 1
+    assert client.get("/api/trucks/NOPE/events").status_code == 404
+
+
+def test_the_websocket_carries_device_events(client):
+    with client.websocket_connect("/ws/live") as ws:
+        assert ws.receive_json()["event"] == "HELLO"
+        client.post("/api/simulation/scenario",
+                    json={"truckId": "T102", "scenario": "REFRIGERATION_FAILURE"})
+        client.post("/api/simulation/tick")
+
+        seen = set()
+        for _ in range(12):
+            seen.add(ws.receive_json()["event"])
+            if "DEVICE_EVENT" in seen:
+                break
+        assert "DEVICE_EVENT" in seen

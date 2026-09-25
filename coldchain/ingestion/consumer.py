@@ -100,4 +100,5 @@ class MqttConsumer:
             return
         if msg.topic.endswith("/telemetry"):
             self.pipeline.handle_payload(payload, topic=msg.topic)
-        # `/events` is reserved for device-side events; nothing consumes it yet.
+        elif msg.topic.endswith("/events"):
+            self.pipeline.handle_event_payload(payload, topic=msg.topic)

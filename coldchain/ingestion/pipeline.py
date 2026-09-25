@@ -25,9 +25,10 @@ from pydantic import ValidationError as PydanticValidationError
 from .. import cache, config, fleet
 from ..util import camelize
 from ..db import models, queries, session as db
-from ..schemas import Derived, Incident, Telemetry, TruckState
+from ..schemas import (Derived, DeviceEvent, Incident, Telemetry,
+                       TruckState)
 from .derived import TruckAccumulator
-from .validation import ValidationError, normalize
+from .validation import ValidationError, normalize, normalize_event
 
 log = logging.getLogger("coldchain.ingest")
 
@@ -41,6 +42,7 @@ class Pipeline:
         self.trucks: dict[str, TruckState] = {}
         self.accumulators: dict[str, TruckAccumulator] = {}
         self.incidents: dict[str, Incident] = {}
+        self.events: list[DeviceEvent] = []
         self.rejected: list[dict] = []
         self._broadcast = broadcast
         self._persist = persist
@@ -265,6 +267,75 @@ class Pipeline:
         except Exception as exc:                      # noqa: BLE001 - demo safety
             log.warning("could not store reading: %s", exc)
 
+    # ----------------------------------------------------- device events
+    def handle_event_payload(self, payload: dict[str, Any], *,
+                             topic: str | None = None) -> Optional[DeviceEvent]:
+        """Entry point for one raw message on the events topic."""
+        try:
+            event = normalize_event(payload, topic=topic)
+        except ValidationError as exc:
+            self._reject(exc, payload)
+            return None
+        return self.handle_event(event)
+
+    def handle_event(self, event: DeviceEvent) -> DeviceEvent:
+        """Record a device event and reflect what it says about the truck.
+
+        A door opening reported the instant it happens keeps the dashboard
+        current between telemetry ticks. The next reading carries the same
+        field and simply overwrites it, so telemetry stays authoritative.
+
+        Incident thresholds are deliberately not driven from here: they are
+        accumulated from the telemetry stream, whose timestamps are regular.
+        An event only says a thing happened, not for how long.
+        """
+        with self.lock:
+            truck = self.trucks.get(event.truck_id)
+            if truck is None:
+                truck = TruckState(truck_id=event.truck_id,
+                                   device_id=event.device_id)
+                self.trucks[event.truck_id] = truck
+                self.accumulators[event.truck_id] = TruckAccumulator(event.truck_id)
+
+            if event.type == "DOOR_OPENED":
+                truck.door_open = True
+            elif event.type == "DOOR_CLOSED":
+                truck.door_open = False
+            elif event.type == "REFRIGERATION_ON":
+                truck.refrigeration_on = True
+            elif event.type == "REFRIGERATION_OFF":
+                truck.refrigeration_on = False
+
+            self.events.append(event)
+            self.events[:] = self.events[-config.WINDOW_SIZE:]
+            state = truck.model_dump(by_alias=True, mode="json")
+
+        if self._persist:
+            self._store_event(event)
+        cache.set_latest(event.truck_id, state)
+
+        self._push({"event": "DEVICE_EVENT",
+                    **event.model_dump(by_alias=True, mode="json")})
+        self._push({"event": "TRUCK_STATE_UPDATED", **state})
+        return event
+
+    def _store_event(self, e: DeviceEvent) -> None:
+        try:
+            with db.session() as s:
+                s.add(models.DeviceEventRow(
+                    ts=e.timestamp, truck_id=e.truck_id, device_id=e.device_id,
+                    type=e.type, detail=e.detail, value=e.value))
+                s.commit()
+        except Exception as exc:                      # noqa: BLE001 - demo safety
+            log.warning("could not store device event: %s", exc)
+
+    def device_events(self, truck_id: str | None = None,
+                      limit: int = 100) -> list[DeviceEvent]:
+        with self.lock:
+            rows = [e for e in self.events
+                    if truck_id is None or e.truck_id == truck_id]
+            return rows[-limit:]
+
     # --------------------------------------------------------- incidents
     def _open(self, truck_id: str, kind: str, severity: str, detail: str,
               peak: float | None, at: datetime) -> Optional[Incident]:
@@ -417,6 +488,7 @@ class Pipeline:
     def reset(self) -> None:
         with self.lock:
             self.incidents.clear()
+            self.events.clear()
             self.rejected.clear()
             self._seq = 0
             for acc in self.accumulators.values():

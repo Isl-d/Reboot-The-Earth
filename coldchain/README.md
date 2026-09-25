@@ -71,6 +71,38 @@ Ingest also accepts the shorter spelling from the brief's MQTT example
 from the `deviceId` or the topic. A topic that contradicts the payload is a
 conflict, not something to guess at.
 
+## Device events
+
+The brief names `coldchain/trucks/{truckId}/events` but does not define its
+payload, **so this contract is ours** — say so if a teammate asks, and change
+it freely:
+
+```json
+{"deviceId": "TRUCK-T102", "truckId": "T102",
+ "timestamp": "2026-09-25T09:00:00Z",
+ "type": "DOOR_OPENED", "detail": "lid lifted", "value": null}
+```
+
+Types: `DOOR_OPENED`, `DOOR_CLOSED`, `REFRIGERATION_ON`, `REFRIGERATION_OFF`,
+`SHOCK`, `POWER_LOST`, `POWER_RESTORED`, `SENSOR_FAULT`. Anything else is
+rejected with a reason rather than stored — a type the dashboard cannot render
+is not useful data.
+
+It exists because telemetry only arrives every 2–5 s, while a door opening is
+what *explains* the reading that follows it. An event updates the door and
+refrigeration flags the instant it lands, and the next reading carries the
+same fields and overwrites them, so telemetry stays authoritative.
+
+Events deliberately do **not** open incidents. Thresholds are accumulated from
+the telemetry stream, whose timestamps are regular; an event says a thing
+happened, not for how long, and driving a duration threshold from one would be
+inventing a number. They are stored in `device_events`, served by
+`GET /api/trucks/{id}/events` and `GET /api/device-events`, and pushed on the
+WebSocket as `DEVICE_EVENT`.
+
+The simulator publishes them on transitions only — a door that just opened, a
+unit that just tripped — not once per tick.
+
 ## Scenarios
 
 | Scenario | What it does |
@@ -98,6 +130,7 @@ curl -X POST localhost:8100/api/simulation/scenario \
 | `GET /api/warehouses` · `/{id}` · `GET /api/stores` · `GET /api/routes` | Map geometry |
 | `GET /api/inventory` · `/{batchId}` | Batches, quantities and expiry |
 | `GET /api/incidents` · `/{id}` | Threshold incidents, filterable by status |
+| `GET /api/trucks/{id}/events` · `GET /api/device-events` | Device events |
 | `GET /api/rejected` | Validation failures — bad data is visible, not dropped |
 | `POST /api/simulation/start · stop · reset · scenario · tick` | Demo control |
 | `GET /api/simulation/runs` | Recorded runs, newest first |
@@ -114,8 +147,8 @@ curl -X POST localhost:8100/api/simulation/scenario \
 ```
 
 Events: `HELLO`, `TRUCK_STATE_UPDATED`, `INCIDENT_CREATED`,
-`INCIDENT_UPDATED`, `PREDICTION_UPDATED`, `RECOMMENDATION_UPDATED`,
-`SIMULATION_RESET`.
+`INCIDENT_UPDATED`, `DEVICE_EVENT`, `PREDICTION_UPDATED`,
+`RECOMMENDATION_UPDATED`, `SIMULATION_RESET`.
 
 Ingest runs on the MQTT thread and sends happen on the asyncio loop, so the
 hub hands messages across with `call_soon_threadsafe` and drops a frame rather
