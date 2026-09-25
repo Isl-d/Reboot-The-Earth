@@ -66,11 +66,6 @@ class TruckAccumulator:
                 # E_T = sum max(0, T_i - T_safe) * dt, in degree-minutes.
                 self.thermal_exposure_c_min += (prev.temperature_c - safe_max_c) * (dt_s / 60.0)
 
-        # A door that has just closed, or cooling that has just come back,
-        # ends its run: the counters above already hold the total.
-        if not t.door_open and (prev is None or not prev.door_open):
-            pass
-
         deviation = 0.0
         if safe_max_c is not None and t.temperature_c > safe_max_c:
             deviation = t.temperature_c - safe_max_c

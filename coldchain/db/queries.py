@@ -11,7 +11,7 @@ the database mid-demo must not take the API down.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import desc, select
@@ -36,11 +36,19 @@ def readings(truck_id: str, *, limit: int = 200,
         log.warning("history query failed (%s) - falling back to memory", exc)
         return []
 
+    def _utc(ts):
+        # SQLite hands back naive datetimes. Emitting one without a "Z" makes
+        # a browser read it as local time, so REST history and the WebSocket
+        # would disagree by the viewer's offset.
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
     rows.reverse()
     return [{
         "deviceId": r.device_id,
         "truckId": r.truck_id,
-        "timestamp": r.ts.isoformat().replace("+00:00", "Z"),
+        "timestamp": _utc(r.ts),
         "temperatureC": r.temperature_c,
         "humidityPct": r.humidity_pct,
         "latitude": r.latitude,
@@ -224,3 +232,28 @@ def warehouse(warehouse_id: str) -> dict[str, Any] | None:
 def batch(batch_id: str) -> dict[str, Any] | None:
     rows, _ = batches()
     return next((b for b in rows if b["id"] == batch_id), None)
+
+
+def clear_stream_tables() -> dict[str, int]:
+    """Empty the per-run tables on POST /api/simulation/reset.
+
+    Resetting rewinds the simulated clock to now, so readings written before
+    it carry timestamps in the future. `readings()` takes the newest rows by
+    ts, which means the chart would keep serving those stale rows and appear
+    frozen. Reference data is untouched.
+    """
+    from sqlalchemy import delete
+
+    counts: dict[str, int] = {}
+    try:
+        with db.session() as s:
+            for name, model in (("sensor_readings", models.SensorReading),
+                                ("device_events", models.DeviceEventRow),
+                                ("incidents", models.IncidentRow),
+                                ("rejected_readings", models.RejectedReading)):
+                counts[name] = s.execute(delete(model)).rowcount or 0
+            s.commit()
+        log.info("reset cleared %s", counts)
+    except Exception as exc:                          # noqa: BLE001 - demo safety
+        log.warning("could not clear stream tables (%s)", exc)
+    return counts

@@ -64,7 +64,9 @@ class Telemetry(Wire):
     truck_id: str
     timestamp: datetime
     temperature_c: float
-    humidity_pct: float
+    # Absent is null, never 0.0: a fridge does not read zero per cent, and a
+    # fabricated value would plot as a measurement on the humidity chart.
+    humidity_pct: Optional[float] = None
     latitude: float
     longitude: float
     speed_kmh: float

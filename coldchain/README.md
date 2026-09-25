@@ -66,6 +66,10 @@ Published every 2 s (configurable) to `coldchain/trucks/{truckId}/telemetry`:
 }
 ```
 
+`humidityPct` may be **null**: a device that reports no humidity gets none
+invented for it, because 0 % is physically implausible in a refrigerated box
+and would plot as a real measurement.
+
 Ingest also accepts the shorter spelling from the brief's MQTT example
 (`temperature`, `humidity`, `lat`, `lon`) and recovers a missing `truckId`
 from the `deviceId` or the topic. A topic that contradicts the payload is a
@@ -175,6 +179,11 @@ instead, which is the authoritative record:
   skipped rather than putting a string where the dashboard expects a number.
 * A run left open by a process that died is closed at the newest reading in
   the store, not at `now`, so its duration is not inflated by the downtime.
+* `POST /api/simulation/reset` empties `sensor_readings`, `device_events`,
+  `incidents` and `rejected_readings`. Reset rewinds the simulated clock, so
+  rows written before it carry timestamps in the future, and the chart — which
+  takes the newest rows by `ts` — would keep serving them and appear frozen.
+  Reference data is untouched.
 
 ## Reference data
 
@@ -226,6 +235,14 @@ the `now` that validation compares against all come from one simulated clock
 carrying the same wall-clock second and no duration-based incident would ever
 open. At ×1 the clock tracks real time, so a separate ingest process sees no
 skew.
+
+The simulated clock exists **only while the simulation is driving time** — it
+is taken on `start()` or on the first hand-driven tick, and given back on
+`stop()` or `reset()`. Holding it for the life of the process froze
+`clock.now()`, so an idle service rejected a real device's correctly-stamped
+telemetry as `timestamp_in_future` once uptime passed the skew limit. The
+hardware path and the simulated one share this clock, so releasing it matters
+as much as installing it.
 
 ## Data quality
 

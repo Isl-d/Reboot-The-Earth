@@ -41,12 +41,25 @@ class SimulationRunner:
         self._stop = threading.Event()
         self._lock = threading.RLock()
         self.ticks = 0
-        # The simulator owns the platform clock for as long as it exists: it
-        # is the thing producing the timestamps.
+        # The simulated clock exists only while the simulation is driving
+        # time. Installing it in the constructor froze clock.now() for the
+        # life of the process: an idle service rejected a real device's
+        # correctly-stamped telemetry as `timestamp_in_future` once uptime
+        # passed the skew limit, and every timestamp-less reading shared one
+        # instant so no duration-based incident could open.
+        self._clock: clock.SimulatedClock | None = None
+
+    # ------------------------------------------------------------ control
+    def _install_clock(self) -> None:
+        """Take over the platform clock, anchored at the real time now."""
         self._clock = clock.SimulatedClock()
         clock.install(self._clock)
 
-    # ------------------------------------------------------------ control
+    def _release_clock(self) -> None:
+        """Hand the platform back to the wall clock."""
+        self._clock = None
+        clock.uninstall()
+
     def start(self, speed_multiplier: float = 1.0) -> bool:
         """Start ticking. Returns False if it was already running."""
         with self._lock:
@@ -54,6 +67,7 @@ class SimulationRunner:
                 self.speed_multiplier = speed_multiplier
                 return False
             self.speed_multiplier = speed_multiplier
+            self._install_clock()
             self._stop.clear()
             self.running = True
             self._thread = threading.Thread(target=self._loop, name="coldchain-sim",
@@ -64,12 +78,24 @@ class SimulationRunner:
 
     def stop(self) -> bool:
         with self._lock:
-            if not self.running:
-                return False
-            self._stop.set()
-            self.running = False
+            was_running = self.running
+            if was_running:
+                self._stop.set()
+                self.running = False
+
+        # Join before releasing the clock. A tick already waiting on the lock
+        # would otherwise reinstall it the moment we let go, and time would
+        # stay frozen for every real device after the demo stopped.
         if self._thread is not None:
             self._thread.join(timeout=3)
+
+        with self._lock:
+            # Released even if we were never started: a hand-driven tick takes
+            # the clock too.
+            self._release_clock()
+
+        if not was_running:
+            return False
         log.info("simulation stopped after %d ticks", self.ticks)
         return True
 
@@ -79,8 +105,7 @@ class SimulationRunner:
         with self._lock:
             self.trucks = scenarios.build_fleet(self.seed)
             self.ticks = 0
-            self._clock = clock.SimulatedClock()
-            clock.install(self._clock)
+            self._release_clock()
         if was_running:
             self.start(self.speed_multiplier)
 
@@ -112,6 +137,11 @@ class SimulationRunner:
             trucks = list(self.trucks.values())
             dt = self.tick_s * max(0.1, self.speed_multiplier)
             self.ticks += 1
+            # A tick drives time even when nobody called start() - the demo
+            # panel and the tests step by hand - so take the clock now if we
+            # do not already hold it.
+            if self._clock is None:
+                self._install_clock()
             # Move the platform clock with the simulation, so timestamps,
             # accumulated durations and validation all agree (clock.py).
             self._clock.advance(dt)

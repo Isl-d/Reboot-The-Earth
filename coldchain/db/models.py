@@ -49,7 +49,7 @@ class SensorReading(Base):
     truck_id: Mapped[str] = mapped_column(String(32), index=True)
     device_id: Mapped[str] = mapped_column(String(48))
     temperature_c: Mapped[float] = mapped_column(Float)
-    humidity_pct: Mapped[float] = mapped_column(Float)
+    humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
     speed_kmh: Mapped[float] = mapped_column(Float)

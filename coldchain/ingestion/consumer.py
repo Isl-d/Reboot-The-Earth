@@ -50,11 +50,22 @@ class MqttConsumer:
         client.on_message = self._on_message
         client.on_disconnect = self._on_disconnect
 
+        client.reconnect_delay_set(min_delay=1, max_delay=8)
         try:
             client.connect(self.host, self.port, keepalive=30)
         except Exception as exc:                        # noqa: BLE001 - demo safety
-            log.warning("broker at %s:%s unreachable (%s) - ingest will retry",
-                        self.host, self.port, exc)
+            # Say it and mean it: connect_async plus a running network loop is
+            # what actually retries. Before this the message promised a retry
+            # and nothing retried, so a broker that came up a second late left
+            # MQTT ingest dead for the life of the process.
+            log.warning("broker at %s:%s unreachable (%s) - retrying in the "
+                        "background", self.host, self.port, exc)
+            try:
+                client.connect_async(self.host, self.port, keepalive=30)
+                client.loop_start()
+                self._client = client
+            except Exception as retry_exc:              # noqa: BLE001
+                log.warning("could not arm the reconnect loop: %s", retry_exc)
             return False
 
         client.loop_start()

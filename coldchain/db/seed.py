@@ -6,6 +6,7 @@ idempotent: run it as often as you like.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
@@ -13,6 +14,15 @@ from .. import fleet
 from . import models, session as db
 
 log = logging.getLogger("coldchain.seed")
+
+
+def _stable_id(text: str) -> int:
+    """A deterministic surrogate key, so seeding stays idempotent.
+
+    Masked to 31 bits: the column is a plain INTEGER and the full eight hex
+    digits overflow it.
+    """
+    return int(hashlib.sha1(text.encode()).hexdigest()[:8], 16) & 0x7FFF_FFFF
 
 
 def seed() -> dict[str, int]:
@@ -40,7 +50,10 @@ def seed() -> dict[str, int]:
                 s.merge(models.ProductBatch(**b))
                 counts["batches"] += 1
                 s.merge(models.Inventory(
-                    id=abs(hash(b["id"])) % 2_000_000_000,
+                    # PYTHONHASHSEED is random per process, so hash() gave a
+                    # different key each run and merge() inserted instead of
+                    # updating - three seeds produced fifteen rows.
+                    id=_stable_id(b["id"]),
                     batch_id=b["id"], location_id=b["truck_id"] or "WH01",
                     location_kind="TRUCK" if b["truck_id"] else "WAREHOUSE",
                     quantity_kg=b["quantity_kg"]))

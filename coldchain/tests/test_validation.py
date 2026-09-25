@@ -104,7 +104,9 @@ def test_a_missing_timestamp_is_filled_in_rather_than_rejected():
 def test_missing_optional_fields_get_safe_defaults():
     r = normalize({"truckId": "T102", "temperatureC": 3.0,
                    "latitude": 25.0, "longitude": 51.0}, now=_now())
-    assert r.humidity_pct == 0.0
+    # Humidity is the exception: there is no safe default for a measurement,
+    # and 0 % would plot as a real reading, so absent stays absent.
+    assert r.humidity_pct is None
     assert r.speed_kmh == 0.0
     assert r.door_open is False
     assert r.refrigeration_on is True           # absence is not a failure report

@@ -74,6 +74,9 @@ async def lifespan(app: FastAPI):
     finally:
         runner.stop()
         consumer.stop()
+        # The publisher owns a socket and a network thread of its own.
+        if hasattr(runner.sink, "stop"):
+            runner.sink.stop()
         task.cancel()
 
 
@@ -299,6 +302,7 @@ def simulation_reset() -> dict:
     queries.stop_run(_run_id, datetime.now(timezone.utc))
     _run_id = None
     runner.reset()
+    queries.clear_stream_tables()
     pipeline.reset()
     return {"running": runner.running, "ticks": runner.ticks, "reset": True}
 

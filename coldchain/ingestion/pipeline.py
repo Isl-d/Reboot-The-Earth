@@ -338,16 +338,32 @@ class Pipeline:
 
     # --------------------------------------------------------- incidents
     def _open(self, truck_id: str, kind: str, severity: str, detail: str,
-              peak: float | None, at: datetime) -> Optional[Incident]:
-        """Open an incident unless one of this kind is already open."""
-        for inc in self.incidents.values():
-            if inc.truck_id == truck_id and inc.type == kind and inc.status == "OPEN":
-                if peak is not None:
-                    inc.peak_temperature_c = max(inc.peak_temperature_c or peak, peak)
-                return None
+              peak: float | None, at: datetime, *,
+              instantaneous: bool = False) -> Optional[Incident]:
+        """Open an incident unless one of this kind is already open.
+
+        An instantaneous incident - a shock is over the moment it happens -
+        skips the dedupe and is recorded closed, otherwise the first one would
+        stay OPEN forever and every later shock would be swallowed as a
+        duplicate of it.
+        """
+        if not instantaneous:
+            for inc in self.incidents.values():
+                if (inc.truck_id == truck_id and inc.type == kind
+                        and inc.status == "OPEN"):
+                    if peak is not None and peak > (inc.peak_temperature_c or peak - 1):
+                        inc.peak_temperature_c = peak
+                        # Persist and push, or a restart recovers a stale peak.
+                        if self._persist:
+                            self._write_incident(inc)
+                        self._push({"event": "INCIDENT_UPDATED",
+                                    **inc.model_dump(by_alias=True, mode="json")})
+                    return None
         self._seq += 1
         inc = Incident(id=f"INC-{self._seq:04d}", truck_id=truck_id, type=kind,
-                       severity=severity, status="OPEN", opened_at=at,
+                       severity=severity,
+                       status="CLOSED" if instantaneous else "OPEN",
+                       opened_at=at, closed_at=at if instantaneous else None,
                        detail=detail, peak_temperature_c=peak)
         self.incidents[inc.id] = inc
         log.info("incident %s %s on %s - %s", inc.id, kind, truck_id, detail)
@@ -417,7 +433,8 @@ class Pipeline:
 
         if r.g_force >= config.GFORCE_INCIDENT:
             inc = self._open(r.truck_id, "SHOCK", "MEDIUM",
-                             f"shock of {r.g_force:.1f} g recorded", None, now)
+                             f"shock of {r.g_force:.1f} g recorded", None, now,
+                             instantaneous=True)
             if inc:
                 opened.append(inc)
 

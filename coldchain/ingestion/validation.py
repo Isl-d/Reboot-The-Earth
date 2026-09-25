@@ -76,10 +76,12 @@ def normalize(payload: dict[str, Any], *, topic: str | None = None,
     if not truck_id:
         raise ValidationError("missing_truck_id",
                               "no truckId, no deviceId to derive it from, and no topic")
-    if topic_truck and raw.truck_id and topic_truck != raw.truck_id:
+    # The check covers the derived id too: a device whose id disagrees with
+    # the topic it published on is a wiring fault, not something to guess at.
+    if topic_truck and topic_truck != truck_id:
         raise ValidationError(
             "truck_id_conflict",
-            f"topic says {topic_truck} but the payload says {raw.truck_id}")
+            f"topic says {topic_truck} but the payload resolves to {truck_id}")
 
     device_id = raw.device_id or f"TRUCK-{truck_id}"
 
@@ -102,8 +104,10 @@ def normalize(payload: dict[str, Any], *, topic: str | None = None,
     _range("latitude", raw.latitude, -90.0, 90.0)
     _range("longitude", raw.longitude, -180.0, 180.0)
 
-    humidity = 0.0 if raw.humidity_pct is None else raw.humidity_pct
-    _range("humidity", humidity, config.HUMIDITY_MIN_PCT, config.HUMIDITY_MAX_PCT)
+    humidity = raw.humidity_pct
+    if humidity is not None:
+        _range("humidity", humidity, config.HUMIDITY_MIN_PCT,
+               config.HUMIDITY_MAX_PCT)
 
     speed = 0.0 if raw.speed_kmh is None else raw.speed_kmh
     if speed < 0:
@@ -120,7 +124,7 @@ def normalize(payload: dict[str, Any], *, topic: str | None = None,
         truck_id=truck_id,
         timestamp=ts,
         temperature_c=float(raw.temperature_c),
-        humidity_pct=float(humidity),
+        humidity_pct=None if humidity is None else float(humidity),
         latitude=float(raw.latitude),
         longitude=float(raw.longitude),
         speed_kmh=float(speed),
@@ -161,10 +165,10 @@ def normalize_event(payload: dict[str, Any], *, topic: str | None = None,
     if not truck_id:
         raise ValidationError("missing_truck_id",
                               "no truckId, no deviceId to derive it from, and no topic")
-    if topic_truck and raw.truck_id and topic_truck != raw.truck_id:
+    if topic_truck and topic_truck != truck_id:
         raise ValidationError(
             "truck_id_conflict",
-            f"topic says {topic_truck} but the payload says {raw.truck_id}")
+            f"topic says {topic_truck} but the payload resolves to {truck_id}")
 
     if not raw.type:
         raise ValidationError("missing_event_type", "no type in the payload")

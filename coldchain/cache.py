@@ -68,7 +68,11 @@ def _set(key: str, value: str) -> None:
 def _get(key: str) -> Optional[str]:
     if _client is not None:
         try:
-            return _client.get(key)
+            value = _client.get(key)
+            if value is not None:
+                return value
+            # Fall through: a write that failed mid-demo was parked in memory,
+            # and returning None here would strand it.
         except Exception as exc:                      # noqa: BLE001
             log.warning("redis read failed (%s) - using memory", exc)
     with _lock:
@@ -76,15 +80,17 @@ def _get(key: str) -> Optional[str]:
 
 
 def _keys(pattern: str) -> list[str]:
-    if _client is not None:
-        try:
-            return [k for k in _client.scan_iter(match=pattern)]
-        except Exception:                             # noqa: BLE001
-            pass
     import fnmatch
 
+    found: set[str] = set()
+    if _client is not None:
+        try:
+            found.update(_client.scan_iter(match=pattern))
+        except Exception:                             # noqa: BLE001
+            pass
     with _lock:
-        return [k for k in _mem if fnmatch.fnmatch(k, pattern)]
+        found.update(k for k in _mem if fnmatch.fnmatch(k, pattern))
+    return sorted(found)
 
 
 # ------------------------------------------------------------------ public
