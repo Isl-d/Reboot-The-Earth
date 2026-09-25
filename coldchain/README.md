@@ -185,6 +185,46 @@ instead, which is the authoritative record:
   takes the newest rows by `ts` — would keep serving them and appear frozen.
   Reference data is untouched.
 
+## Open data
+
+Everything this platform runs on is openly licensed, catalogued in
+`data/SOURCES.md` and served live from `GET /api/opendata` so the licence
+position is checkable from the running system. Seventeen sources across
+geography, routing, weather, food science, emissions, physics and operations;
+five more are named as deliberately excluded because they are not openly
+licensed.
+
+```bash
+python -m coldchain.opendata.fetch --list     # the catalogue and its licences
+python -m coldchain.opendata.fetch            # collect everything reachable
+python -m coldchain.opendata.fetch --offline  # no network attempts
+```
+
+Four sources need no network at all — they ship inside open-source packages or
+are computed from published formulae, so they work on a stage with no
+internet: GeoNames places, public holidays, a psychrometric dew-point table,
+and the product storage reference. The rest are free public endpoints with no
+account and no API key, fetched the day before the event.
+
+`data/provenance.json` records what actually arrived, when, how many rows and
+under what licence. A blocked host is recorded as blocked rather than quietly
+skipped, so nothing looks fetched when it was not.
+
+**One caveat worth repeating:** every row of `product_reference.csv` carries
+`verified=no`. Those are transcribed literature values with citations to check
+them against, present so the platform runs offline — not values any machine
+here downloaded. Do not present one to a judge as sourced.
+
+### Condensation
+
+The psychrometrics are load-bearing, not decoration. Each reading carries a
+`dewPointC`, and `condensationRisk` is true when the door is open and the dew
+point of the incoming air is above the product's safe maximum — warm humid
+Gulf air meeting a chilled pallet wets the cartons, and wet cardboard grows
+mould long before temperature alone would have spoiled the load. It is null
+when the device reports no humidity, because a dew point without one would be
+invented.
+
 ## Reference data
 
 `fleet.py` defines the demo world and seeds it. After that the database is the

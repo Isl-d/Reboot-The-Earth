@@ -17,6 +17,7 @@ from typing import Deque, Optional
 
 from .. import config
 from ..fleet import haversine_km
+from ..opendata.offline import condensation_risk, dew_point_c
 from ..schemas import Derived, Telemetry
 
 
@@ -70,6 +71,23 @@ class TruckAccumulator:
         if safe_max_c is not None and t.temperature_c > safe_max_c:
             deviation = t.temperature_c - safe_max_c
 
+        # Condensation is the failure a thermometer alone misses: warm humid
+        # air meeting a cold pallet at an open door wets the product, and wet
+        # cartons grow mould long before temperature would have spoiled them.
+        #
+        # The risk is judged against the product's own safe maximum, on the
+        # stated assumption that a pallet whose chain has held sits at or
+        # below it. This service has no cargo-temperature model of its own
+        # and does not pretend to: with no product limit there is no risk to
+        # report, only the dew point.
+        dew_c: float | None = None
+        wets: bool | None = None
+        if t.humidity_pct is not None:
+            dew_c = round(dew_point_c(t.temperature_c, t.humidity_pct), 2)
+            if safe_max_c is not None:
+                wets = bool(t.door_open and condensation_risk(
+                    safe_max_c, t.temperature_c, t.humidity_pct))
+
         dist_to_dest: float | None = None
         eta_min: float | None = None
         if destination is not None:
@@ -93,6 +111,8 @@ class TruckAccumulator:
             refrigeration_off_duration_s=round(self.refrigeration_off_duration_s, 1),
             distance_to_destination_km=None if dist_to_dest is None else round(dist_to_dest, 3),
             eta_minutes=None if eta_min is None else round(eta_min, 1),
+            dew_point_c=dew_c,
+            condensation_risk=wets,
         )
 
     def recent(self, limit: int = 60) -> list[Telemetry]:

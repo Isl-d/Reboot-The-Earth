@@ -259,6 +259,38 @@ def list_rejected() -> dict:
     return {"rejected": pipeline.rejected[-100:]}
 
 
+@app.get("/api/opendata")
+def open_data() -> dict:
+    """Every open data source the platform uses, and what actually arrived.
+
+    Served so the licence position is checkable from the running system
+    rather than only from a document nobody opens.
+    """
+    import json as _json
+
+    from ..opendata import fetch as od_fetch, sources as od_sources
+
+    provenance = {}
+    if od_fetch.PROVENANCE.exists():
+        try:
+            provenance = _json.loads(od_fetch.PROVENANCE.read_text())
+        except (ValueError, OSError):
+            provenance = {}
+
+    return {
+        "sources": [{"key": s.key, "name": s.name, "category": s.category,
+                     "provides": s.provides, "licence": s.licence,
+                     "url": s.url, "access": s.access, "output": s.output,
+                     "notes": s.notes}
+                    for s in od_sources.SOURCES],
+        "excluded": [{"name": n, "reason": w} for n, w in od_sources.EXCLUDED],
+        "attribution": ("Map data © OpenStreetMap contributors (ODbL). "
+                        "Weather © Open-Meteo (CC BY 4.0). "
+                        "Places © GeoNames (CC BY 4.0)."),
+        "provenance": provenance,
+    }
+
+
 # ----------------------------------------------------------- simulation
 _run_id: int | None = None
 

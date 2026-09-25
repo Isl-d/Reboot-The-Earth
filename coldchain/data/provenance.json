@@ -1,0 +1,184 @@
+{
+  "generatedAt": "2026-09-25T11:07:32.902553+00:00",
+  "sources": {
+    "geonames_places": {
+      "name": "GeoNames populated places",
+      "category": "geography",
+      "licence": "CC BY 4.0",
+      "url": "https://www.geonames.org/",
+      "access": "offline",
+      "output": "open_places.csv",
+      "fetched": true,
+      "status": "ok",
+      "rows": 26,
+      "fetchedAt": "2026-09-25T11:07:32.824843+00:00"
+    },
+    "osm_cold_sites": {
+      "name": "OpenStreetMap cold-chain sites (Overpass)",
+      "category": "geography",
+      "licence": "ODbL 1.0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "access": "network",
+      "output": "osm_sites.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "osm_hgv_restrictions": {
+      "name": "OpenStreetMap HGV restrictions",
+      "category": "geography",
+      "licence": "ODbL 1.0",
+      "url": "https://overpass-api.de/api/interpreter",
+      "access": "network",
+      "output": "osm_hgv_restrictions.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "osrm_routes": {
+      "name": "OSRM road routing",
+      "category": "routing",
+      "licence": "Software BSD-2-Clause; road data ODbL (OpenStreetMap)",
+      "url": "https://router.project-osrm.org/",
+      "access": "network",
+      "output": "open_routes.geojson",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "natural_earth": {
+      "name": "Natural Earth coastlines and boundaries",
+      "category": "geography",
+      "licence": "Public domain",
+      "url": "https://www.naturalearthdata.com/",
+      "access": "network",
+      "output": "natural_earth_qatar.geojson",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "open_meteo_forecast": {
+      "name": "Open-Meteo forecast",
+      "category": "weather",
+      "licence": "CC BY 4.0",
+      "url": "https://api.open-meteo.com/v1/forecast",
+      "access": "network",
+      "output": "open_weather_forecast.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "open_meteo_archive": {
+      "name": "Open-Meteo historical (ERA5)",
+      "category": "weather",
+      "licence": "CC BY 4.0 (ERA5 via Copernicus)",
+      "url": "https://archive-api.open-meteo.com/v1/archive",
+      "access": "network",
+      "output": "open_weather_history.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "nasa_power": {
+      "name": "NASA POWER",
+      "category": "weather",
+      "licence": "Public domain (US Government)",
+      "url": "https://power.larc.nasa.gov/api/temporal/daily/point",
+      "access": "network",
+      "output": "nasa_power_daily.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "product_reference": {
+      "name": "Product storage reference (shipped table)",
+      "category": "food-science",
+      "licence": "Values are facts from the cited open sources; this table is our transcription of them",
+      "url": "https://www.ars.usda.gov/arsuserfiles/oc/np/commercialstorage/commercialstorage.pdf",
+      "access": "offline",
+      "output": "product_reference.csv",
+      "fetched": true,
+      "status": "ok",
+      "rows": 7,
+      "warning": "every row is unverified",
+      "fetchedAt": "2026-09-25T11:07:32.825129+00:00"
+    },
+    "usda_handbook_66": {
+      "name": "USDA Agriculture Handbook 66",
+      "category": "food-science",
+      "licence": "Public domain (US Government)",
+      "url": "https://www.ars.usda.gov/arsuserfiles/oc/np/commercialstorage/commercialstorage.pdf",
+      "access": "network",
+      "output": "usda_handbook_66.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "codex_alimentarius": {
+      "name": "Codex Alimentarius cold-chain codes",
+      "category": "food-science",
+      "licence": "Open (FAO/WHO)",
+      "url": "https://www.fao.org/fao-who-codexalimentarius/codex-texts/codes-of-practice/en/",
+      "access": "network",
+      "output": "codex_limits.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "unece_atp": {
+      "name": "UNECE ATP agreement",
+      "category": "food-science",
+      "licence": "Open (United Nations)",
+      "url": "https://unece.org/transport/standards/transport/perishable-foodstuffs",
+      "access": "network",
+      "output": "atp_vehicle_classes.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "fao_food_loss": {
+      "name": "FAO Food Loss and Waste database",
+      "category": "impact",
+      "licence": "CC BY-NC-SA 3.0 IGO",
+      "url": "https://www.fao.org/platform-food-loss-waste/flw-data/en/",
+      "access": "network",
+      "output": "fao_food_loss.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "defra_ghg_factors": {
+      "name": "UK DESNZ/DEFRA greenhouse gas conversion factors",
+      "category": "emissions",
+      "licence": "Open Government Licence v3.0",
+      "url": "https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting",
+      "access": "network",
+      "output": "emission_factors.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "eea_emep_transport": {
+      "name": "EEA/EMEP road transport emission inventory",
+      "category": "emissions",
+      "licence": "CC BY 4.0 (European Environment Agency)",
+      "url": "https://www.eea.europa.eu/publications/emep-eea-guidebook-2023",
+      "access": "network",
+      "output": "eea_transport_factors.csv",
+      "fetched": false,
+      "status": "skipped (--offline)"
+    },
+    "psychrometrics": {
+      "name": "Psychrometric relations (Magnus/Tetens)",
+      "category": "physics",
+      "licence": "Public domain (published formulae)",
+      "url": "https://doi.org/10.1175/BAMS-86-2-225",
+      "access": "offline",
+      "output": "psychrometrics.csv",
+      "fetched": true,
+      "status": "ok",
+      "rows": 144,
+      "fetchedAt": "2026-09-25T11:07:32.825790+00:00"
+    },
+    "public_holidays": {
+      "name": "Public holidays",
+      "category": "operational",
+      "licence": "MIT (package); underlying holiday dates are facts",
+      "url": "https://github.com/vacanza/holidays",
+      "access": "offline",
+      "output": "public_holidays.csv",
+      "fetched": true,
+      "status": "ok",
+      "rows": 16,
+      "fetchedAt": "2026-09-25T11:07:32.902538+00:00"
+    }
+  }
+}

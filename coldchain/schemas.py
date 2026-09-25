@@ -97,6 +97,10 @@ class Derived(Wire):
     refrigeration_off_duration_s: float = 0.0
     distance_to_destination_km: Optional[float] = None
     eta_minutes: Optional[float] = None
+    # Open psychrometrics (Magnus/Tetens). Null when the device reports no
+    # humidity, because a dew point without one would be invented.
+    dew_point_c: Optional[float] = None
+    condensation_risk: Optional[bool] = None
 
 
 class TruckState(Wire):

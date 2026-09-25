@@ -45,3 +45,19 @@ def pipeline():
     from coldchain.ingestion.pipeline import Pipeline
 
     return Pipeline(persist=False)
+
+
+@pytest.fixture(autouse=True)
+def release_platform_clock():
+    """The simulated clock is global state.
+
+    A runner takes it on its first tick and holds it until stopped, so a test
+    that ticks without stopping leaves the next test's `clock.now()` frozen.
+    Release it either side of every test rather than relying on each one to
+    tidy up.
+    """
+    from coldchain import clock
+
+    clock.uninstall()
+    yield
+    clock.uninstall()

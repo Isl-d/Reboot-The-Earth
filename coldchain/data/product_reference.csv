@@ -1,0 +1,8 @@
+productId,name,safeMinTempC,safeMaxTempC,idealTempC,recommendedRhPct,typicalShelfLifeDays,q10,citation,verified,source
+CHICKEN,Fresh chicken,-2,4,0,95,7,3.0,Codex CAC/RCP 58-2005; USDA FSIS poultry storage guidance,no,"literature-recalled, pending extraction from the cited open source"
+FISH,Fresh fish,-1,2,0,95,3,3.0,Codex CAC/RCP 52-2003 (fish and fishery products),no,"literature-recalled, pending extraction from the cited open source"
+MILK,Fresh milk,1,6,4,85,10,2.5,Codex CAC/RCP 57-2004 (milk and milk products),no,"literature-recalled, pending extraction from the cited open source"
+LETTUCE,Lettuce,0,8,0,98,14,3.0,"USDA Agriculture Handbook 66, leafy vegetables",no,"literature-recalled, pending extraction from the cited open source"
+TOMATO,Tomato,10,15,12,90,10,2.5,USDA Agriculture Handbook 66 - chilling injury below 10 C,no,"literature-recalled, pending extraction from the cited open source"
+BANANA,Banana,13,16,14,90,14,2.5,USDA Agriculture Handbook 66 - chilling injury below 13 C,no,"literature-recalled, pending extraction from the cited open source"
+DATES,Dates,0,5,0,75,180,2.0,FAO date palm post-harvest guidance,no,"literature-recalled, pending extraction from the cited open source"
